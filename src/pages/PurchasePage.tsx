@@ -3,7 +3,7 @@ import {
   ArrowLeft, Search, Filter, ShoppingBag, CheckCircle2, 
   Printer, Share2, CreditCard, Banknote, Building2, Smartphone,
   Trash2, Plus, ChevronRight, Calendar, Image as ImageIcon, 
-  MessageSquare, Info, X, Check
+ Info,
 } from 'lucide-react';
 import { toBangla } from '../lib/utils';
 
@@ -29,7 +29,7 @@ export default function PurchasePage({ onBack }: PurchaseProps) {
   const [paidAmount, setPaidAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [supplier, setSupplier] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+ const [date] = useState(new Date().toISOString().split('T')[0]);
   const [isSmsEnabled, setIsSmsEnabled] = useState(false);
   const [remarks, setRemarks] = useState('');
 

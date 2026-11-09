@@ -28,6 +28,7 @@ interface TransferItem {
 
 interface Dealer {
   id: number;
+  dealerId: string;
   name: string;
   phone: string;
   area: string;
@@ -61,13 +62,12 @@ export default function DepotPage({ onBack }: PageProps) {
   ];
 
   const [dealers, setDealers] = useState<Dealer[]>([
-    { id: 1, name: "ভাই ভাই এগ্রো", phone: "01711000001", area: "গাজীপুর", dueBalance: 15000, totalPaid: 50000 },
-    { id: 2, name: "মোল্লা পোল্ট্রি", phone: "01711000002", area: "সাভার", dueBalance: 8000, totalPaid: 120000 },
+    { id: 1, dealerId: "DLR-001", name: "ভাই ভাই এগ্রো", phone: "01711000001", area: "গাজীপুর", dueBalance: 15000, totalPaid: 50000 },
+    { id: 2, dealerId: "DLR-002", name: "মোল্লা পোল্ট্রি", phone: "01711000002", area: "সাভার", dueBalance: 8000, totalPaid: 120000 },
   ]);
 
-  // স্টেট ম্যানেজমেন্ট (নতুন ক্রম অনুযায়ী)
-  // 0: Stock, 1: Dealer List, 2: Dealer Transfer, 3: Receive, 4: Internal
-  const [activeTab, setActiveTab] = useState(0); 
+  // স্টেট ম্যানেজমেন্ট
+  const [activeTab, setActiveTab] = useState(0); // 0: Stock, 1: Dealer List, 2: Dealer Transfer, 3: Receive, 4: Internal
   const [selectedDepot, setSelectedDepot] = useState(depots[0]);
   
   // ট্রান্সফার স্টেট
@@ -87,7 +87,7 @@ export default function DepotPage({ onBack }: PageProps) {
 
   // ডিলার অ্যাড স্টেট
   const [isAddDealerModalOpen, setIsAddDealerModalOpen] = useState(false);
-  const [dealerForm, setDealerForm] = useState({ name: '', phone: '', area: '', openingDue: '' });
+  const [dealerForm, setDealerForm] = useState({ dealerId: '', name: '', phone: '', area: '', openingDue: '' });
 
   // ডিলার লেজার স্টেট
   const [isLedgerModalOpen, setIsLedgerModalOpen] = useState(false);
@@ -151,7 +151,7 @@ export default function DepotPage({ onBack }: PageProps) {
     setInternalCart([]);
     setVehicleNo("");
     alert("ইন্টারনাল ট্রান্সফার সফল হয়েছে! মালটি এখন ট্রানজিটে আছে।");
-    setActiveTab(3); // রিসিভ ট্যাবে চলে যাবে (নতুন ক্রম অনুযায়ী 3 হলো রিসিভ)
+    setActiveTab(3); // রিসিভ ট্যাবে চলে যাবে
   };
 
   const handleOpenReceiveModal = (transfer: InternalTransfer) => {
@@ -177,10 +177,12 @@ export default function DepotPage({ onBack }: PageProps) {
     setReceivingTransfer(null);
   };
 
+  // নতুন ডিলার সেভ
   const handleSaveDealer = () => {
     if (!dealerForm.name || !dealerForm.phone) return alert('ডিলারের নাম এবং ফোন নম্বর আবশ্যক');
     const newDealer: Dealer = {
       id: Date.now(),
+      dealerId: dealerForm.dealerId || `DLR-${Math.floor(100 + Math.random() * 900)}`,
       name: dealerForm.name,
       phone: dealerForm.phone,
       area: dealerForm.area,
@@ -189,7 +191,7 @@ export default function DepotPage({ onBack }: PageProps) {
     };
     setDealers([...dealers, newDealer]);
     setIsAddDealerModalOpen(false);
-    setDealerForm({ name: '', phone: '', area: '', openingDue: '' });
+    setDealerForm({ dealerId: '', name: '', phone: '', area: '', openingDue: '' });
   };
 
   // ফিল্টার
@@ -220,7 +222,7 @@ export default function DepotPage({ onBack }: PageProps) {
           )}
         </div>
         
-        {/* নেভিগেশন ট্যাব (নতুন ক্রম অনুযায়ী) */}
+        {/* নেভিগেশন ট্যাব */}
         {!isGatePassReady && (
           <div className="flex overflow-x-auto scrollbar-hide bg-black/20 px-2 py-1.5">
             {[
@@ -240,7 +242,7 @@ export default function DepotPage({ onBack }: PageProps) {
 
       <main className="flex-1 max-w-5xl w-full mx-auto p-2.5 sm:p-4 flex flex-col gap-3 pb-12">
         
-        {/* ================= ১. ট্যাব: ডিপো স্টক (id: 0) ================= */}
+        {/* ================= ১. ট্যাব: ডিপো স্টক ================= */}
         {activeTab === 0 && !isGatePassReady && (
           <div className="bg-white rounded-xl border border-[#D3E4DB] shadow-sm overflow-hidden">
             <div className="bg-[#E2E7E5] px-3.5 py-2 flex items-center justify-between border-b border-[#D3E4DB]">
@@ -264,7 +266,7 @@ export default function DepotPage({ onBack }: PageProps) {
           </div>
         )}
 
-        {/* ================= ২. ট্যাব: ডিলার তথ্য / লিস্ট (id: 1) ================= */}
+        {/* ================= ২. ট্যাব: ডিলার তথ্য / লিস্ট ================= */}
         {activeTab === 1 && !isGatePassReady && (
           <div className="flex flex-col gap-3">
             <div className="flex justify-between items-center bg-white p-2.5 rounded-xl border border-gray-200 shadow-sm shrink-0">
@@ -279,7 +281,10 @@ export default function DepotPage({ onBack }: PageProps) {
                 <div key={dealer.id} className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex flex-col gap-2">
                   <div className="flex justify-between items-start">
                     <div>
-                      <h3 className="font-bold text-sm text-gray-800">{dealer.name}</h3>
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <h3 className="font-bold text-sm text-gray-800">{dealer.name}</h3>
+                        {dealer.dealerId && <span className="text-[9px] bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded border border-gray-200">{dealer.dealerId}</span>}
+                      </div>
                       <p className="text-[11px] text-gray-500 flex items-center gap-1 mt-0.5"><Phone size={12}/> {toBangla(dealer.phone)}</p>
                       <p className="text-[11px] text-gray-500 flex items-center gap-1 mt-0.5"><MapPin size={12}/> {dealer.area}</p>
                     </div>
@@ -297,7 +302,7 @@ export default function DepotPage({ onBack }: PageProps) {
           </div>
         )}
 
-        {/* ================= ৩. ট্যাব: ডিলার ট্রান্সফার (id: 2) ================= */}
+        {/* ================= ৩. ট্যাব: ডিলার ট্রান্সফার ================= */}
         {activeTab === 2 && !isGatePassReady && (
           <div className="flex flex-col gap-3">
             <div className="bg-white rounded-xl border border-[#D3E4DB] p-3 shadow-sm flex flex-col gap-3">
@@ -360,7 +365,7 @@ export default function DepotPage({ onBack }: PageProps) {
           </div>
         )}
 
-        {/* ================= ৪. ট্যাব: রিসিভ ড্যামেজ (id: 3) ================= */}
+        {/* ================= ৪. ট্যাব: রিসিভ ড্যামেজ ================= */}
         {activeTab === 3 && !isGatePassReady && (
           <div className="flex flex-col gap-3">
             <div className="bg-white rounded-xl border border-[#D3E4DB] p-3 shadow-sm flex items-center justify-between shrink-0">
@@ -407,7 +412,7 @@ export default function DepotPage({ onBack }: PageProps) {
           </div>
         )}
 
-        {/* ================= ৫. ট্যাব: ইন্টারনাল ট্রান্সফার (id: 4) ================= */}
+        {/* ================= ৫. ট্যাব: ইন্টারনাল ট্রান্সফার ================= */}
         {activeTab === 4 && !isGatePassReady && (
           <div className="flex flex-col gap-3">
             <div className="bg-white rounded-xl border border-[#D3E4DB] p-3 shadow-sm flex flex-col gap-3">
@@ -526,7 +531,7 @@ export default function DepotPage({ onBack }: PageProps) {
         )}
       </main>
 
-      {/* ================= মডাল: নতুন ডিলার ================= */}
+      {/* ================= মডাল: নতুন ডিলার (নতুন লেআউট) ================= */}
       {isAddDealerModalOpen && (
         <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
@@ -535,23 +540,35 @@ export default function DepotPage({ onBack }: PageProps) {
               <button onClick={() => setIsAddDealerModalOpen(false)} className="p-1 bg-white/20 rounded-full"><X size={16}/></button>
             </div>
             <div className="p-4 flex flex-col gap-3">
-              <div>
-                <label className="text-xs font-bold text-gray-600 mb-1 block">ডিলারের নাম <span className="text-red-500">*</span></label>
-                <input type="text" value={dealerForm.name} onChange={e => setDealerForm({...dealerForm, name: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-[#0B5C47]" />
+              
+              {/* ১ম লাইন: নাম (২/৩ অংশ) এবং আইডি (১/৩ অংশ) */}
+              <div className="grid grid-cols-3 gap-2">
+                <div className="col-span-2">
+                  <label className="text-xs font-bold text-gray-600 mb-1 block">ডিলারের নাম <span className="text-red-500">*</span></label>
+                  <input type="text" value={dealerForm.name} onChange={e => setDealerForm({...dealerForm, name: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-[#0B5C47]" />
+                </div>
+                <div className="col-span-1">
+                  <label className="text-xs font-bold text-gray-600 mb-1 block">ডিলার আইডি</label>
+                  <input type="text" value={dealerForm.dealerId} onChange={e => setDealerForm({...dealerForm, dealerId: e.target.value})} placeholder="DLR-001" className="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-[#0B5C47]" />
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
+
+                            {/* ২য় লাইন: ফোন এবং পূর্বের বাকি */}
+              <div className="grid grid-cols-10 gap-2">
+                <div className="col-span-7">
                   <label className="text-xs font-bold text-gray-600 mb-1 block">ফোন নম্বর <span className="text-red-500">*</span></label>
                   <input type="text" value={dealerForm.phone} onChange={e => setDealerForm({...dealerForm, phone: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-[#0B5C47]" />
                 </div>
-                <div>
-                  <label className="text-xs font-bold text-gray-600 mb-1 block">এলাকা</label>
-                  <input type="text" value={dealerForm.area} onChange={e => setDealerForm({...dealerForm, area: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-[#0B5C47]" />
+                <div className="col-span-3">
+                  <label className="text-xs font-bold text-gray-600 mb-1 block">পূর্বের বাকি</label>
+                  <input type="number" value={dealerForm.openingDue} onChange={e => setDealerForm({...dealerForm, openingDue: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-[#0B5C47]" />
                 </div>
               </div>
+
+              {/* ৩য় লাইন: ঠিকানা */}
               <div>
-                <label className="text-xs font-bold text-gray-600 mb-1 block">পূর্বের বাকি (ঐচ্ছিক)</label>
-                <input type="number" value={dealerForm.openingDue} onChange={e => setDealerForm({...dealerForm, openingDue: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-[#0B5C47]" />
+                <label className="text-xs font-bold text-gray-600 mb-1 block">ঠিকানা / এলাকা</label>
+                <input type="text" value={dealerForm.area} onChange={e => setDealerForm({...dealerForm, area: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-[#0B5C47]" />
               </div>
             </div>
             <div className="p-3 border-t bg-gray-50 flex gap-2">
@@ -569,7 +586,7 @@ export default function DepotPage({ onBack }: PageProps) {
             <div className="bg-[#0B5C47] p-3 flex justify-between items-center text-white shrink-0">
               <div>
                 <h2 className="font-bold text-sm">ডিলার লেজার</h2>
-                <p className="text-[10px] text-cyan-200">{selectedLedgerDealer.name}</p>
+                <p className="text-[10px] text-cyan-200">{selectedLedgerDealer.name} {selectedLedgerDealer.dealerId ? `(${selectedLedgerDealer.dealerId})` : ''}</p>
               </div>
               <button onClick={() => setIsLedgerModalOpen(false)} className="p-1 bg-white/20 rounded-full"><X size={16}/></button>
             </div>

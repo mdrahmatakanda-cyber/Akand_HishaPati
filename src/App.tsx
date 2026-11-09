@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { WifiOff, LogOut, X, AlertTriangle } from 'lucide-react';
+import { WifiOff, LogOut, X, AlertTriangle, Loader2 } from 'lucide-react';
 import DashboardPage from './pages/DashboardPage';
 import {
   PurchasePage, SalePage,
@@ -10,17 +10,19 @@ import {
   ExpiredPage, WarrantyPage, PrinterPage, RecycleBinPage
 } from './pages';
 
-import DemoDataPage from './pages/DemoDataPage';
 import InboxPage from './pages/InboxPage';
 import HelpPage from './pages/HelpPage';
 import MenuPage from './pages/MenuPage';
 import CalculatorPage from './pages/CalculatorPage';
 import TransactionDetailsPage from './pages/TransactionDetailsPage';
-
-// নতুন পেইজ ইমপোর্ট
 import NewExpensePage from './pages/NewExpensePage';
 import ExpenseHistoryPage from './pages/ExpenseHistoryPage';
 import DueHistoryPage from './pages/DueHistoryPage';
+import AuthPage from './pages/AuthPage';
+import SetupBusinessPage from './pages/SetupBusinessPage';
+
+import { AppProvider } from './context/AppContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 
 export type ScreenKey = 
   | 'dashboard' | 'purchase' | 'sale'
@@ -31,37 +33,31 @@ export type ScreenKey =
   | 'depot' | 'sr' | 'market' | 'company'
   | 'cashbox' | 'partners' | 'marketing' | 'app_access'
   | 'expired' | 'warranty' | 'printer' | 'recycle_bin'
-  | 'demo_data' | 'inbox' | 'help' | 'menu' | 'calculator';
+  | 'inbox' | 'help' | 'menu' | 'calculator';
 
-// নতুন বিজনেস মোড ও কনফিগারেশন টাইপ
 export type BusinessMode = 'shop' | 'depot' | 'general';
 
 export interface ModeConfig {
-  [key: string]: {
-    shop: boolean;
-    depot: boolean;
-    general: boolean;
-  }
+  [key: string]: { shop: boolean; depot: boolean; general: boolean; }
 }
 
-// ডিফল্ট কনফিগারেশন
 const defaultModeConfig: ModeConfig = {
   khata: { shop: true, depot: true, general: true },
   business: { shop: true, depot: true, general: true },
-  depot: { shop: false, depot: true, general: true }, // দোকান মোডে ডিপো সেকশন ডিফল্টভাবে বন্ধ
+  depot: { shop: false, depot: true, general: true }, 
   others: { shop: true, depot: true, general: true },
 };
 
-export default function App() {
+function AppContent() {
+  // এখানে activeBusiness ব্যবহার করা হলো
+  const { user, activeBusiness, isLoading } = useAuth();
+
   const [currentScreen, setCurrentScreen] = useState<ScreenKey>('dashboard');
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
   const [showExitModal, setShowExitModal] = useState<boolean>(false);
-  
-  // নতুন গ্লোবাল স্টেট
   const [currentMode, setCurrentMode] = useState<BusinessMode>('general');
   const [modeConfig, setModeConfig] = useState<ModeConfig>(defaultModeConfig);
 
-  // ডাইনামিক নেভিগেশন স্ট্যাক
   const historyStackRef = useRef<ScreenKey[]>(['dashboard']);
   const currentScreenRef = useRef<ScreenKey>('dashboard');
   const isExitingRef = useRef<boolean>(false);
@@ -82,16 +78,12 @@ export default function App() {
     };
   }, []);
 
-  // ==============================================================
-  // 🧭 নেভিগেশন ফাংশন
-  // ==============================================================
   const navigateTo = (screen: string) => {
     if (screen === currentScreen) return;
     historyStackRef.current.push(screen as ScreenKey);
     setCurrentScreen(screen as ScreenKey);
   };
 
-  // ব্যাক বাটন লজিক
   const goBack = () => {
     if (historyStackRef.current.length > 1) {
       historyStackRef.current.pop();
@@ -102,23 +94,16 @@ export default function App() {
     }
   };
 
-  // ==============================================================
-  // 📱 মোবাইল হার্ডওয়্যার ব্যাক বাটন হ্যান্ডেলিং
-  // ==============================================================
   useEffect(() => {
     window.history.pushState(null, '', window.location.href);
     historyCount.current = 1;
 
     const handlePopState = () => {
       if (isExitingRef.current) return;
-
       setTimeout(() => {
         window.history.pushState(null, '', window.location.href);
         historyCount.current += 1;
-
-        const current = currentScreenRef.current;
-        
-        if (current === 'dashboard') {
+        if (currentScreenRef.current === 'dashboard') {
           setShowExitModal(true);
         } else {
           goBack();
@@ -136,10 +121,20 @@ export default function App() {
     window.history.go(-historyCount.current);
   };
 
-  // ==============================================================
-  // 🧭 সেন্ট্রাল পেজ রাউটার
-  // ==============================================================
+  if (isLoading) {
+    return (
+      <div className="h-[100dvh] bg-[#EFF6F3] flex flex-col items-center justify-center">
+        <Loader2 size={40} className="text-[#1E88E5] animate-spin mb-4" />
+        <p className="text-sm font-bold text-gray-500">লোড হচ্ছে...</p>
+      </div>
+    );
+  }
+
+  if (!user) return <AuthPage />;
   
+  // এখানে activeBusiness চেক করা হলো
+  if (user && !activeBusiness) return <SetupBusinessPage />;
+
   const renderScreen = () => {
     if (currentScreen === 'dashboard') {
       return (
@@ -150,20 +145,13 @@ export default function App() {
               <span>আপনি বর্তমানে <strong>অফলাইনে</strong> আছেন। সব হিসাব দেখা যাবে, তবে নতুন কোনো তথ্য সেভ হবে না।</span>
             </div>
           )}
-          <DashboardPage 
-            onNavigate={navigateTo} 
-            currentMode={currentMode} 
-            modeConfig={modeConfig} 
-          />
+          <DashboardPage onNavigate={navigateTo} currentMode={currentMode} modeConfig={modeConfig} />
         </>
       );
     }
 
-    if (currentScreen === 'demo_data') return <DemoDataPage onBack={goBack} />;
     if (currentScreen === 'inbox') return <InboxPage onBack={goBack} />;
     if (currentScreen === 'help') return <HelpPage onBack={goBack} />;
-    
-    // মেনু পেইজে নতুন প্রপ্সগুলো পাস করা হলো
     if (currentScreen === 'menu') {
       return (
         <MenuPage 
@@ -176,7 +164,6 @@ export default function App() {
         />
       );
     }
-    
     if (currentScreen === 'calculator') return <CalculatorPage onBack={goBack} />;
 
     if (currentScreen === 'purchase') return <PurchasePage onBack={goBack} />;
@@ -219,38 +206,34 @@ export default function App() {
   return (
     <>
       {renderScreen()}
-
       {showExitModal && (
         <div className="fixed inset-0 bg-black/50 z-[999] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl w-full max-w-xs overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
             <div className="bg-[#0B5C47] p-4 flex flex-col items-center justify-center relative">
-              <button onClick={() => setShowExitModal(false)} className="absolute top-2 right-2 p-1 bg-white/10 hover:bg-white/20 rounded-full text-white transition">
-                <X size={16} />
-              </button>
-              <div className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center mb-2 border border-white/20">
-                <AlertTriangle size={24} className="text-amber-300" />
-              </div>
+              <button onClick={() => setShowExitModal(false)} className="absolute top-2 right-2 p-1 bg-white/10 hover:bg-white/20 rounded-full text-white transition"><X size={16} /></button>
+              <div className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center mb-2 border border-white/20"><AlertTriangle size={24} className="text-amber-300" /></div>
               <h2 className="text-white font-bold text-lg text-center">বের হতে চান?</h2>
             </div>
-
             <div className="p-4 text-center">
-              <p className="text-sm text-gray-600 mb-5">
-                আপনি কি সত্যিই <strong className="text-[#0B5C47]">Dream Agro</strong> অ্যাপ থেকে বের হতে চান?
-              </p>
-              
+              <p className="text-sm text-gray-600 mb-5">আপনি কি সত্যিই <strong className="text-[#0B5C47]">Akand HishabPati</strong> অ্যাপ থেকে বের হতে চান?</p>
               <div className="flex gap-2 w-full">
-                <button onClick={() => setShowExitModal(false)} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2.5 rounded-xl transition active:scale-95 text-sm">
-                  থাকুন
-                </button>
-                <button onClick={handleConfirmExit} className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-2.5 rounded-xl transition active:scale-95 flex items-center justify-center gap-1.5 text-sm shadow-md shadow-red-500/30">
-                  <LogOut size={16} />
-                  বের হোন
-                </button>
+                <button onClick={() => setShowExitModal(false)} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2.5 rounded-xl transition active:scale-95 text-sm">থাকুন</button>
+                <button onClick={handleConfirmExit} className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-2.5 rounded-xl transition active:scale-95 flex items-center justify-center gap-1.5 text-sm shadow-md shadow-red-500/30"><LogOut size={16} /> বের হোন</button>
               </div>
             </div>
           </div>
         </div>
       )}
     </>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppProvider>
+        <AppContent />
+      </AppProvider>
+    </AuthProvider>
   );
 }

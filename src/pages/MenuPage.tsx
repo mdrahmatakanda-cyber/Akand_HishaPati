@@ -5,21 +5,37 @@ import {
   Share2, Star, LogOut, ChevronRight, MonitorSmartphone, 
   ShieldCheck, Trash2, Printer, 
   DownloadCloud, PlaySquare, AlertTriangle, Bell, Sun, Moon,
-  Lock, Laptop, Store
+  Lock, Laptop, Store, Building2, Layers, Settings, Check, X
 } from 'lucide-react';
 import { toBangla } from '../lib/utils';
+import type { BusinessMode, ModeConfig } from '../App'; // App.tsx থেকে টাইপ ইমপোর্ট
 
 interface Props {
   onBack: () => void;
   onNavigate: (screen: string) => void;
+  currentMode: BusinessMode;
+  setCurrentMode: (mode: BusinessMode) => void;
+  modeConfig: ModeConfig;
+  setModeConfig: (config: ModeConfig) => void;
 }
 
-export default function MenuPage({ onBack, onNavigate }: Props) {
+export default function MenuPage({ 
+  onBack, 
+  onNavigate, 
+  currentMode, 
+  setCurrentMode, 
+  modeConfig, 
+  setModeConfig 
+}: Props) {
   // স্টেট
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isNotificationsOn, setIsNotificationsOn] = useState(true);
   const [isAppLockOn, setIsAppLockOn] = useState(false);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+  
+  // কাস্টমাইজেশন মডাল স্টেট
+  const [isCustomizeModalOpen, setIsCustomizeModalOpen] = useState(false);
+  const [tempConfig, setTempConfig] = useState<ModeConfig>(modeConfig);
 
   // ডেমু ইউজার ডাটা
   const user = {
@@ -28,6 +44,23 @@ export default function MenuPage({ onBack, onNavigate }: Props) {
     phone: '01752005057',
     completion: 80,
     currentShop: 'Dream Agro & Fisheries' // বর্তমান দোকান
+  };
+
+  // কাস্টমাইজেশন টগল হ্যান্ডলার
+  const handleConfigToggle = (section: string, mode: 'shop' | 'depot' | 'general') => {
+    setTempConfig(prev => ({
+      ...prev,
+      [section]: {
+        ...prev[section],
+        [mode]: !prev[section][mode]
+      }
+    }));
+  };
+
+  // কাস্টমাইজেশন সেভ
+  const saveCustomization = () => {
+    setModeConfig(tempConfig);
+    setIsCustomizeModalOpen(false);
   };
 
   return (
@@ -45,10 +78,10 @@ export default function MenuPage({ onBack, onNavigate }: Props) {
         </div>
       </header>
 
-      {/* মেইন কন্টেন্ট (ফাঁকা জায়গা কমাতে gap-2 করা হয়েছে) */}
+      {/* মেইন কন্টেন্ট */}
       <main className="flex-1 overflow-y-auto p-2.5 flex flex-col gap-2 pb-8 scrollbar-hide">
         
-        {/* ২. প্রোফাইল কার্ড (দোকান পরিবর্তনসহ) */}
+        {/* ২. প্রোফাইল কার্ড */}
         <div className="bg-white rounded-2xl border border-gray-200 p-3 shadow-sm flex flex-col gap-2.5 shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-14 h-14 bg-gradient-to-br from-[#0B5C47] to-[#1E88E5] rounded-full flex items-center justify-center text-white shadow-md shrink-0 text-xl font-bold">
@@ -88,7 +121,29 @@ export default function MenuPage({ onBack, onNavigate }: Props) {
           </button>
         </div>
 
-        {/* ================= ৩. অ্যাপ সেটিংস ================= */}
+        {/* ৩. বিজনেস মোড সুইচার */}
+        <div className="bg-white rounded-2xl border border-gray-200 p-1.5 shadow-sm shrink-0 flex gap-1">
+          <button 
+            onClick={() => setCurrentMode('shop')} 
+            className={`flex-1 py-2 rounded-xl text-xs font-bold flex flex-col items-center gap-1 transition ${currentMode === 'shop' ? 'bg-[#EFF6FF] text-[#1E88E5] border border-[#1E88E5]/30 shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}
+          >
+            <Store size={16}/> দোকান
+          </button>
+          <button 
+            onClick={() => setCurrentMode('depot')} 
+            className={`flex-1 py-2 rounded-xl text-xs font-bold flex flex-col items-center gap-1 transition ${currentMode === 'depot' ? 'bg-[#E8F5E9] text-[#0B5C47] border border-[#0B5C47]/30 shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}
+          >
+            <Building2 size={16}/> ডিপো
+          </button>
+          <button 
+            onClick={() => setCurrentMode('general')} 
+            className={`flex-1 py-2 rounded-xl text-xs font-bold flex flex-col items-center gap-1 transition ${currentMode === 'general' ? 'bg-gray-100 text-gray-800 border border-gray-300 shadow-sm' : 'text-gray-500 hover:bg-gray-50'}`}
+          >
+            <Layers size={16}/> সাধারণ
+          </button>
+        </div>
+
+        {/* ================= ৪. অ্যাপ সেটিংস ================= */}
         <SectionTitle title="অ্যাপ সেটিংস" />
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden block shrink-0">
           <MenuItem icon={Globe} color="text-blue-600" bg="bg-blue-50" label="ভাষা (Language)" value="বাংলা" onClick={() => alert('ভাষা পরিবর্তন')} />
@@ -126,18 +181,22 @@ export default function MenuPage({ onBack, onNavigate }: Props) {
           </div>
         </div>
 
-        {/* ================= ৪. সিস্টেম টুলস ================= */}
+        {/* ================= ৫. সিস্টেম টুলস ================= */}
         <SectionTitle title="সিস্টেম টুলস" />
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden block shrink-0">
+          
+          {/* নতুন: মোড কাস্টমাইজেশন বাটন */}
+          <MenuItem icon={Settings} color="text-indigo-600" bg="bg-indigo-50" label="মোড কাস্টমাইজেশন" onClick={() => { setTempConfig(modeConfig); setIsCustomizeModalOpen(true); }} />
+
           <MenuItem icon={Printer} color="text-purple-600" bg="bg-purple-50" label="প্রিন্টার সেটিংস" onClick={() => onNavigate('printer')} />
           <MenuItem icon={ShieldCheck} color="text-green-600" bg="bg-green-50" label="ইউজার ও অ্যাক্সেস ম্যানেজমেন্ট" onClick={() => onNavigate('app_access')} />
           <MenuItem icon={Trash2} color="text-red-600" bg="bg-red-50" label="রিসাইকেল বিন" onClick={() => onNavigate('recycle_bin')} />
-          <MenuItem icon={Calculator} color="text-indigo-600" bg="bg-indigo-50" label="ক্যালকুলেটর" onClick={() => onNavigate('calculator')} />
+          <MenuItem icon={Calculator} color="text-cyan-600" bg="bg-cyan-50" label="ক্যালকুলেটর" onClick={() => onNavigate('calculator')} />
           <MenuItem icon={DownloadCloud} color="text-teal-600" bg="bg-teal-50" label="ডাটা ব্যাকআপ ও রিস্টোর" onClick={() => alert('ব্যাকআপ ফাইল ডাউনলোড হচ্ছে...')} />
           <MenuItem icon={Laptop} color="text-gray-600" bg="bg-gray-100" label="ডেস্কটপে শর্টকাট যোগ করুন" onClick={() => alert('হোম স্ক্রিনে শর্টকাট যুক্ত করা হয়েছে!')} />
         </div>
 
-        {/* ================= ৫. সাহায্য ও তথ্য ================= */}
+        {/* ================= ৬. সাহায্য ও তথ্য ================= */}
         <SectionTitle title="সাহায্য ও তথ্য" />
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden block shrink-0">
           <MenuItem icon={HelpCircle} color="text-[#1E88E5]" bg="bg-blue-50" label="সাহায্য ও সাপোর্ট" onClick={() => onNavigate('help')} />
@@ -160,6 +219,70 @@ export default function MenuPage({ onBack, onNavigate }: Props) {
         </button>
 
       </main>
+
+      {/* ================= মোড কাস্টমাইজেশন মডাল ================= */}
+      {isCustomizeModalOpen && (
+        <div className="fixed inset-0 bg-black/60 z-[100] flex justify-center items-end sm:items-center backdrop-blur-sm">
+          <div className="bg-[#EFF6F3] w-full h-[85dvh] sm:h-[80vh] sm:max-w-md sm:rounded-2xl rounded-t-2xl overflow-hidden flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-300">
+            
+            <div className="bg-gradient-to-r from-[#0B5C47] to-[#062D5E] p-3 flex justify-between items-center text-white shrink-0">
+              <h2 className="font-bold text-base flex items-center gap-2"><Settings size={18}/> মোড কাস্টমাইজেশন</h2>
+              <button onClick={() => setIsCustomizeModalOpen(false)} className="p-1 bg-white/20 rounded-full"><X size={18}/></button>
+            </div>
+
+            <div className="p-3 bg-white border-b border-gray-200 shrink-0">
+              <p className="text-xs text-gray-600">আপনি কোন মোডে কোন সেকশনগুলো দেখতে চান তা এখানে সেট করুন।</p>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
+              {[
+                { key: 'khata', title: 'খাতা সমূহ' },
+                { key: 'business', title: 'আপনার ব্যবসার জন্য' },
+                { key: 'depot', title: 'ডিপো ও ডিস্ট্রিবিউশন' },
+                { key: 'others', title: 'অন্যান্য ফিচার' },
+              ].map(section => (
+                <div key={section.key} className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
+                  <h3 className="font-bold text-sm text-gray-800 mb-2 border-b pb-1">{section.title}</h3>
+                  <div className="grid grid-cols-3 gap-2">
+                    <label className="flex flex-col items-center justify-center p-2 border rounded-lg cursor-pointer hover:bg-gray-50 transition">
+                      <input 
+                        type="checkbox" 
+                        checked={tempConfig[section.key]?.shop || false} 
+                        onChange={() => handleConfigToggle(section.key, 'shop')} 
+                        className="w-4 h-4 mb-1 accent-[#1E88E5]" 
+                      />
+                      <span className="text-[10px] font-bold text-gray-600">দোকান</span>
+                    </label>
+                    <label className="flex flex-col items-center justify-center p-2 border rounded-lg cursor-pointer hover:bg-gray-50 transition">
+                      <input 
+                        type="checkbox" 
+                        checked={tempConfig[section.key]?.depot || false} 
+                        onChange={() => handleConfigToggle(section.key, 'depot')} 
+                        className="w-4 h-4 mb-1 accent-[#0B5C47]" 
+                      />
+                      <span className="text-[10px] font-bold text-gray-600">ডিপো</span>
+                    </label>
+                    <label className="flex flex-col items-center justify-center p-2 border rounded-lg cursor-pointer hover:bg-gray-50 transition">
+                      <input 
+                        type="checkbox" 
+                        checked={tempConfig[section.key]?.general || false} 
+                        onChange={() => handleConfigToggle(section.key, 'general')} 
+                        className="w-4 h-4 mb-1 accent-gray-600" 
+                      />
+                      <span className="text-[10px] font-bold text-gray-600">সাধারণ</span>
+                    </label>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="p-3 bg-white border-t border-gray-200 shrink-0 flex gap-2">
+              <button onClick={() => setIsCustomizeModalOpen(false)} className="flex-1 bg-gray-200 text-gray-700 py-2.5 rounded-xl font-bold">বাতিল</button>
+              <button onClick={saveCustomization} className="flex-1 bg-[#1E88E5] text-white py-2.5 rounded-xl font-bold shadow-md flex items-center justify-center gap-1"><Check size={18}/> সেভ করুন</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ================= লগ আউট কনফার্মেশন মডাল ================= */}
       {isLogoutModalOpen && (

@@ -33,11 +33,34 @@ export type ScreenKey =
   | 'expired' | 'warranty' | 'printer' | 'recycle_bin'
   | 'demo_data' | 'inbox' | 'help' | 'menu' | 'calculator';
 
+// নতুন বিজনেস মোড ও কনফিগারেশন টাইপ
+export type BusinessMode = 'shop' | 'depot' | 'general';
+
+export interface ModeConfig {
+  [key: string]: {
+    shop: boolean;
+    depot: boolean;
+    general: boolean;
+  }
+}
+
+// ডিফল্ট কনফিগারেশন
+const defaultModeConfig: ModeConfig = {
+  khata: { shop: true, depot: true, general: true },
+  business: { shop: true, depot: true, general: true },
+  depot: { shop: false, depot: true, general: true }, // দোকান মোডে ডিপো সেকশন ডিফল্টভাবে বন্ধ
+  others: { shop: true, depot: true, general: true },
+};
+
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<ScreenKey>('dashboard');
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
   const [showExitModal, setShowExitModal] = useState<boolean>(false);
   
+  // নতুন গ্লোবাল স্টেট
+  const [currentMode, setCurrentMode] = useState<BusinessMode>('general');
+  const [modeConfig, setModeConfig] = useState<ModeConfig>(defaultModeConfig);
+
   // ডাইনামিক নেভিগেশন স্ট্যাক
   const historyStackRef = useRef<ScreenKey[]>(['dashboard']);
   const currentScreenRef = useRef<ScreenKey>('dashboard');
@@ -60,11 +83,11 @@ export default function App() {
   }, []);
 
   // ==============================================================
-  // 🧭 নেভিগেশন ফাংশন (Error Fixed)
+  // 🧭 নেভিগেশন ফাংশন
   // ==============================================================
   const navigateTo = (screen: string) => {
     if (screen === currentScreen) return;
-    historyStackRef.current.push(screen as ScreenKey); // string to ScreenKey cast
+    historyStackRef.current.push(screen as ScreenKey);
     setCurrentScreen(screen as ScreenKey);
   };
 
@@ -127,7 +150,11 @@ export default function App() {
               <span>আপনি বর্তমানে <strong>অফলাইনে</strong> আছেন। সব হিসাব দেখা যাবে, তবে নতুন কোনো তথ্য সেভ হবে না।</span>
             </div>
           )}
-          <DashboardPage onNavigate={navigateTo} />
+          <DashboardPage 
+            onNavigate={navigateTo} 
+            currentMode={currentMode} 
+            modeConfig={modeConfig} 
+          />
         </>
       );
     }
@@ -135,7 +162,21 @@ export default function App() {
     if (currentScreen === 'demo_data') return <DemoDataPage onBack={goBack} />;
     if (currentScreen === 'inbox') return <InboxPage onBack={goBack} />;
     if (currentScreen === 'help') return <HelpPage onBack={goBack} />;
-    if (currentScreen === 'menu') return <MenuPage onBack={goBack} onNavigate={navigateTo} />;
+    
+    // মেনু পেইজে নতুন প্রপ্সগুলো পাস করা হলো
+    if (currentScreen === 'menu') {
+      return (
+        <MenuPage 
+          onBack={goBack} 
+          onNavigate={navigateTo} 
+          currentMode={currentMode}
+          setCurrentMode={setCurrentMode}
+          modeConfig={modeConfig}
+          setModeConfig={setModeConfig}
+        />
+      );
+    }
+    
     if (currentScreen === 'calculator') return <CalculatorPage onBack={goBack} />;
 
     if (currentScreen === 'purchase') return <PurchasePage onBack={goBack} />;
@@ -156,7 +197,7 @@ export default function App() {
     if (currentScreen === 'contacts') return <ContactsPage onBack={goBack} />;
     if (currentScreen === 'product_list') return <ProductListPage onBack={goBack} />;
     if (currentScreen === 'stock') return <StockPage onBack={goBack} onNavigate={navigateTo} />;
-    if (currentScreen === 'reports') return <ReportsPage onBack={goBack} />;
+    if (currentScreen === 'reports') return <ReportsPage onBack={goBack} onNavigate={navigateTo} />;
 
     if (currentScreen === 'depot') return <DepotPage onBack={goBack} />;
     if (currentScreen === 'sr') return <SrPage onBack={goBack} />;

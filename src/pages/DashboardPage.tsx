@@ -21,8 +21,11 @@ import { toBangla } from '../lib/utils';
 
 type TimePeriod = 'TODAY' | 'WEEK' | 'MONTH';
 
+// নতুন প্রপ্স ইন্টারফেস
 interface DashboardProps {
   onNavigate: (screen: string) => void;
+  currentMode: 'shop' | 'depot' | 'general';
+  modeConfig: any;
 }
 
 // রঙ গাঢ় করার সহায়ক ফাংশন (বাটনের গ্রেডিয়েন্টের জন্য)
@@ -34,7 +37,7 @@ function shade(hex: string, amount: number): string {
   return `rgb(${r}, ${g}, ${b})`;
 }
 
-export default function DashboardPage({ onNavigate }: DashboardProps) {
+export default function DashboardPage({ onNavigate, currentMode, modeConfig }: DashboardProps) {
   const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>('TODAY');
   const [selectedNavIndex, setSelectedNavIndex] = useState(0);
   const [currentSlide, setCurrentSlide] = useState<number>(0);
@@ -90,6 +93,13 @@ export default function DashboardPage({ onNavigate }: DashboardProps) {
     setTimeout(() => setIsRefreshing(false), 800);
   };
 
+  // সেকশন দেখানো বা লুকানোর হেল্পার ফাংশন
+  const isSectionVisible = (sectionKey: string) => {
+    // যদি কনফিগারেশনে সেকশনটি না থাকে, তবে ডিফল্টভাবে দেখাবে
+    if (!modeConfig[sectionKey]) return true;
+    return modeConfig[sectionKey][currentMode] ?? true;
+  };
+
   const prefix = selectedPeriod === 'TODAY' ? 'আজকের' : selectedPeriod === 'WEEK' ? 'সাপ্তাহিক' : 'এই মাসের';
 
   return (
@@ -99,11 +109,9 @@ export default function DashboardPage({ onNavigate }: DashboardProps) {
       {/* ১. প্রিমিয়াম টপ হেডার */}
       {/* ============================================================== */}
       <header className="bg-gradient-to-r from-[#0B5C47] via-[#07465B] to-[#062D5E] text-white shadow-[0_10px_24px_-8px_rgba(6,45,94,0.55)] rounded-b-[22px] shrink-0 z-40 relative overflow-hidden">
-        {/* ডেকোরেশন: হালকা আলোর বৃত্ত ও উপরের শাইন */}
         <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent pointer-events-none"></div>
         <div className="absolute -top-10 -right-8 w-36 h-36 rounded-full bg-white/10 blur-2xl pointer-events-none"></div>
         <div className="absolute -bottom-12 -left-6 w-32 h-32 rounded-full bg-[#43A047]/30 blur-2xl pointer-events-none"></div>
-        {/* নিচের গ্রেডিয়েন্ট অ্যাকসেন্ট লাইন */}
         <div className="absolute bottom-0 inset-x-0 h-[2px] bg-gradient-to-r from-[#43A047] via-[#26C6DA] to-[#1E88E5] pointer-events-none"></div>
 
         <div className="max-w-7xl mx-auto px-3 py-2.5 flex items-center justify-between relative z-10">
@@ -125,7 +133,9 @@ export default function DashboardPage({ onNavigate }: DashboardProps) {
               </div>
               <div className="flex items-center gap-1.5 mt-1">
                 <div className="w-5 h-[1px] bg-gradient-to-r from-transparent to-white/60"></div>
-                <span className="text-[9px] font-bold text-cyan-50/90 tracking-widest leading-none drop-shadow-sm">& FISHERIES</span>
+                <span className="text-[9px] font-bold text-cyan-50/90 tracking-widest leading-none drop-shadow-sm">
+                  {currentMode === 'shop' ? 'SHOP MODE' : currentMode === 'depot' ? 'DEPOT MODE' : '& FISHERIES'}
+                </span>
                 <div className="w-5 h-[1px] bg-gradient-to-l from-transparent to-white/60"></div>
               </div>
             </div>
@@ -146,11 +156,10 @@ export default function DashboardPage({ onNavigate }: DashboardProps) {
               <span className="text-[9px] font-medium mt-0.5 drop-shadow-sm">সাহায্য</span>
             </button>
             
-            {/* ইনবক্স বাটন (ডাইনামিক) */}
             <div 
               onClick={() => { 
                 onNavigate('inbox'); 
-                setUnreadCount(0); // ক্লিক করলেই ব্যাজ মুছে যাবে
+                setUnreadCount(0);
               }} 
               className="relative flex flex-col items-center cursor-pointer text-white/90 hover:text-white transition group"
             >
@@ -169,13 +178,12 @@ export default function DashboardPage({ onNavigate }: DashboardProps) {
       </header>
 
       {/* ============================================================== */}
-      {/* মেইন বডি (ref যুক্ত করা হয়েছে) */}
+      {/* মেইন বডি */}
       {/* ============================================================== */}
       <main ref={mainRef} className="flex-1 min-h-0 overflow-y-auto w-full max-w-7xl mx-auto p-2.5 flex flex-col gap-2.5 pb-28 scrollbar-hide">
         
         {/* ২. সামারি সেকশন */}
         <div className="bg-white rounded-[18px] border border-[#D1E7DD] p-2 shadow-[0_8px_22px_-10px_rgba(11,92,71,0.4)] shrink-0">
-          
           <div className="flex w-full gap-1.5 pb-2 border-b border-gray-100">
             <div className="flex-1 bg-gradient-to-b from-[#DDF3E2] to-white border border-[#B4DFBF] rounded-xl p-1.5 flex flex-col items-center justify-center min-w-0 shadow-[0_3px_8px_-4px_rgba(22,101,52,0.5)]">
               <span className="flex items-center justify-center gap-1 w-full min-w-0 text-[10px] font-bold text-[#166534]">
@@ -200,7 +208,6 @@ export default function DashboardPage({ onNavigate }: DashboardProps) {
             </div>
           </div>
 
-          {/* দৈনিক / সাপ্তাহিক / মাসিক টগল */}
           <div className="flex justify-between items-center py-2">
             <span className="text-[12px] font-bold text-[#0F2A3D]">
               {prefix} হিসাব বিবরণী
@@ -233,7 +240,6 @@ export default function DashboardPage({ onNavigate }: DashboardProps) {
             </div>
           </div>
 
-          {/* বিক্রি, খরচ ও বাকি বক্স */}
           <div className="flex w-full gap-1.5">
             <div className="flex-1 bg-gradient-to-b from-[#F1FAF3] to-white border border-[#CDE8D4] rounded-xl p-1.5 flex flex-col items-center justify-center shadow-sm">
               <span className="text-[10px] text-[#334155] font-bold mb-0.5 whitespace-nowrap">{prefix} বিক্রি</span>
@@ -249,7 +255,6 @@ export default function DashboardPage({ onNavigate }: DashboardProps) {
               </span>
             </div>
 
-            {/* বাকি বক্স (বড় করা হয়েছে এবং ৳ চিহ্ন বাদ) */}
             <div className="flex-[1.6] bg-gradient-to-b from-[#F4F8F6] to-white border border-[#D8E5DE] rounded-xl p-1.5 flex flex-col items-center justify-center shadow-sm">
               <span className="text-[10px] text-[#334155] font-bold mb-1 whitespace-nowrap text-center w-full">{prefix} বাকি</span>
               <div className="flex flex-row w-full gap-1">
@@ -281,7 +286,6 @@ export default function DashboardPage({ onNavigate }: DashboardProps) {
             </div>
           ))}
 
-          {/* নিচে হালকা ছায়া, যাতে ডট স্পষ্ট দেখা যায় */}
           <div className="absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-black/40 to-transparent z-10 pointer-events-none"></div>
           
           <div className="absolute bottom-1 left-1/2 -translate-x-1/2 flex items-center gap-1 z-20 bg-black/30 backdrop-blur-sm px-1.5 py-0.5 rounded-full">
@@ -328,41 +332,49 @@ export default function DashboardPage({ onNavigate }: DashboardProps) {
           </button>
         </div>
 
-        {/* ৫. বিভাগ ১: খাতা সমূহ */}
-        <DepartmentSection title="খাতা সমূহ">
-          <GridFeatureButton title="ক্রয়ের খাতা" icon={ShoppingBasket} color="#1565C0" onClick={() => onNavigate('purchase_khata')} />
-          <GridFeatureButton title="বিক্রির খাতা" icon={BadgeDollarSign} color="#2E7D32" onClick={() => onNavigate('sale_khata')} />
-          <GridFeatureButton title="বাকির খাতা" icon={HandCoins} color="#00838F" onClick={() => onNavigate('due_khata')} />
-          <GridFeatureButton title="খরচের খাতা" icon={Banknote} color="#D32F2F" onClick={() => onNavigate('expense_khata')} />
-        </DepartmentSection>
+        {/* ================= ৫. বিভাগ ১: খাতা সমূহ ================= */}
+        {isSectionVisible('khata') && (
+          <DepartmentSection title="খাতা সমূহ">
+            <GridFeatureButton title="ক্রয়ের খাতা" icon={ShoppingBasket} color="#1565C0" onClick={() => onNavigate('purchase_khata')} />
+            <GridFeatureButton title="বিক্রির খাতা" icon={BadgeDollarSign} color="#2E7D32" onClick={() => onNavigate('sale_khata')} />
+            <GridFeatureButton title="বাকির খাতা" icon={HandCoins} color="#00838F" onClick={() => onNavigate('due_khata')} />
+            <GridFeatureButton title="খরচের খাতা" icon={Banknote} color="#D32F2F" onClick={() => onNavigate('expense_khata')} />
+          </DepartmentSection>
+        )}
 
-        {/* ৬. বিভাগ ২: আপনার ব্যবসার জন্য */}
-        <DepartmentSection title="আপনার ব্যবসার জন্য">
-          <GridFeatureButton title="যোগাযোগ" icon={Contact} color="#00796B" onClick={() => onNavigate('contacts')} />
-          <GridFeatureButton title="প্রোডাক্ট লিস্ট" icon={PackageSearch} color="#0D47A1" onClick={() => onNavigate('product_list')} />
-          <GridFeatureButton title="স্টকের হিসাব" icon={ClipboardList} color="#43A047" onClick={() => onNavigate('stock')} />
-          <GridFeatureButton title="ব্যবসার রিপোর্ট" icon={TrendingUp} color="#1E88E5" onClick={() => onNavigate('reports')} />
-        </DepartmentSection>
+        {/* ================= ৬. বিভাগ ২: আপনার ব্যবসার জন্য ================= */}
+        {isSectionVisible('business') && (
+          <DepartmentSection title="আপনার ব্যবসার জন্য">
+            <GridFeatureButton title="যোগাযোগ" icon={Contact} color="#00796B" onClick={() => onNavigate('contacts')} />
+            <GridFeatureButton title="প্রোডাক্ট লিস্ট" icon={PackageSearch} color="#0D47A1" onClick={() => onNavigate('product_list')} />
+            <GridFeatureButton title="স্টকের হিসাব" icon={ClipboardList} color="#43A047" onClick={() => onNavigate('stock')} />
+            <GridFeatureButton title="ব্যবসার রিপোর্ট" icon={TrendingUp} color="#1E88E5" onClick={() => onNavigate('reports')} />
+          </DepartmentSection>
+        )}
 
-        {/* ৭. বিভাগ ৩: ডিপো ও ডিস্ট্রিবিউশন */}
-        <DepartmentSection title="ডিপো ও ডিস্ট্রিবিউশন">
-          <GridFeatureButton title="ডিপো" icon={Warehouse} color="#00796B" onClick={() => onNavigate('depot')} />
-          <GridFeatureButton title="এসআর" icon={Truck} color="#1565C0" onClick={() => onNavigate('sr')} />
-          <GridFeatureButton title="মার্কেট" icon={Store} color="#EF6C00" onClick={() => onNavigate('market')} />
-          <GridFeatureButton title="কোম্পানি" icon={Building2} color="#455A64" onClick={() => onNavigate('company')} />
-        </DepartmentSection>
+        {/* ================= ৭. বিভাগ ৩: ডিপো ও ডিস্ট্রিবিউশন ================= */}
+        {isSectionVisible('depot') && (
+          <DepartmentSection title="ডিপো ও ডিস্ট্রিবিউশন">
+            <GridFeatureButton title="ডিপো" icon={Warehouse} color="#00796B" onClick={() => onNavigate('depot')} />
+            <GridFeatureButton title="এসআর" icon={Truck} color="#1565C0" onClick={() => onNavigate('sr')} />
+            <GridFeatureButton title="মার্কেট" icon={Store} color="#EF6C00" onClick={() => onNavigate('market')} />
+            <GridFeatureButton title="কোম্পানি" icon={Building2} color="#455A64" onClick={() => onNavigate('company')} />
+          </DepartmentSection>
+        )}
 
-        {/* ৮. বিভাগ ৪: অন্যান্য ফিচার */}
-        <DepartmentSection title="অন্যান্য ফিচার">
-          <GridFeatureButton title="ক্যাশবক্স" icon={WalletCards} color="#2E7D32" onClick={() => onNavigate('cashbox')} />
-          <GridFeatureButton title="পার্টনার" icon={Handshake} color="#00796B" onClick={() => onNavigate('partners')} />
-          <GridFeatureButton title="মার্কেটিং" icon={Megaphone} color="#1E88E5" onClick={() => onNavigate('marketing')} />
-          <GridFeatureButton title="অ্যাপ অ্যাক্সেস" icon={KeyRound} color="#0D47A1" onClick={() => onNavigate('app_access')} />
-          <GridFeatureButton title="মেয়াদোত্তীর্ণ" icon={Hourglass} color="#E53935" onClick={() => onNavigate('expired')} />
-          <GridFeatureButton title="ওয়ারেন্টি" icon={ShieldCheck} color="#00796B" onClick={() => onNavigate('warranty')} />
-          <GridFeatureButton title="প্রিন্টার" icon={Printer} color="#455A64" onClick={() => onNavigate('printer')} />
-          <GridFeatureButton title="রিসাইকেল বিন" icon={Recycle} color="#C62828" onClick={() => onNavigate('recycle_bin')} />
-        </DepartmentSection>
+        {/* ================= ৮. বিভাগ ৪: অন্যান্য ফিচার ================= */}
+        {isSectionVisible('others') && (
+          <DepartmentSection title="অন্যান্য ফিচার">
+            <GridFeatureButton title="ক্যাশবক্স" icon={WalletCards} color="#2E7D32" onClick={() => onNavigate('cashbox')} />
+            <GridFeatureButton title="পার্টনার" icon={Handshake} color="#00796B" onClick={() => onNavigate('partners')} />
+            <GridFeatureButton title="মার্কেটিং" icon={Megaphone} color="#1E88E5" onClick={() => onNavigate('marketing')} />
+            <GridFeatureButton title="অ্যাপ অ্যাক্সেস" icon={KeyRound} color="#0D47A1" onClick={() => onNavigate('app_access')} />
+            <GridFeatureButton title="মেয়াদোত্তীর্ণ" icon={Hourglass} color="#E53935" onClick={() => onNavigate('expired')} />
+            <GridFeatureButton title="ওয়ারেন্টি" icon={ShieldCheck} color="#00796B" onClick={() => onNavigate('warranty')} />
+            <GridFeatureButton title="প্রিন্টার" icon={Printer} color="#455A64" onClick={() => onNavigate('printer')} />
+            <GridFeatureButton title="রিসাইকেল বিন" icon={Recycle} color="#C62828" onClick={() => onNavigate('recycle_bin')} />
+          </DepartmentSection>
+        )}
 
         <div className="h-2"></div>
       </main>
@@ -372,13 +384,11 @@ export default function DashboardPage({ onNavigate }: DashboardProps) {
       {/* ============================================================== */}
       {isQuickActionOpen && (
         <>
-          {/* ব্যাকড্রপ (মেনুর বাইরে ক্লিক করলে বন্ধ হবে) */}
           <div 
             className="fixed inset-0 bg-[#062D5E]/40 z-[60] backdrop-blur-sm transition-opacity"
             onClick={() => setIsQuickActionOpen(false)}
           ></div>
           
-          {/* মেনু কন্টেইনার */}
           <div className="fixed bottom-24 left-1/2 -translate-x-1/2 w-[90%] max-w-sm bg-white rounded-3xl shadow-[0_20px_50px_-12px_rgba(6,45,94,0.6)] z-[70] p-4 border border-[#D3E4DB] overflow-hidden animate-in slide-in-from-bottom-5 duration-200">
             <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-[#43A047] via-[#26C6DA] to-[#1E88E5]"></div>
             <div className="flex justify-between items-center mb-4">
@@ -392,30 +402,10 @@ export default function DashboardPage({ onNavigate }: DashboardProps) {
             </div>
             
             <div className="grid grid-cols-4 gap-2">
-              <QuickActionButton 
-                title="ক্রয়" 
-                icon={PackagePlus} 
-                color="#1E88E5" 
-                onClick={() => { setIsQuickActionOpen(false); onNavigate('purchase'); }} 
-              />
-              <QuickActionButton 
-                title="বিক্রয়" 
-                icon={ReceiptText} 
-                color="#43A047" 
-                onClick={() => { setIsQuickActionOpen(false); onNavigate('sale'); }} 
-              />
-              <QuickActionButton 
-                title="খরচ" 
-                icon={Banknote} 
-                color="#D32F2F" 
-                onClick={() => { setIsQuickActionOpen(false); onNavigate('expense_khata'); }} 
-              />
-              <QuickActionButton 
-                title="ক্যালকুলেটর" 
-                icon={Calculator} 
-                color="#455A64" 
-                onClick={() => { setIsQuickActionOpen(false); onNavigate('calculator'); }} 
-              />
+              <QuickActionButton title="ক্রয়" icon={PackagePlus} color="#1E88E5" onClick={() => { setIsQuickActionOpen(false); onNavigate('purchase'); }} />
+              <QuickActionButton title="বিক্রয়" icon={ReceiptText} color="#43A047" onClick={() => { setIsQuickActionOpen(false); onNavigate('sale'); }} />
+              <QuickActionButton title="খরচ" icon={Banknote} color="#D32F2F" onClick={() => { setIsQuickActionOpen(false); onNavigate('expense_khata'); }} />
+              <QuickActionButton title="ক্যালকুলেটর" icon={Calculator} color="#455A64" onClick={() => { setIsQuickActionOpen(false); onNavigate('calculator'); }} />
             </div>
           </div>
         </>
@@ -425,7 +415,6 @@ export default function DashboardPage({ onNavigate }: DashboardProps) {
       {/* বটম নেভিগেশন বার */}
       {/* ============================================================== */}
       <div className="fixed bottom-0 left-0 w-full bg-white/95 backdrop-blur-xl shadow-[0_-12px_30px_-8px_rgba(6,45,94,0.3)] rounded-t-[26px] border-t border-white z-[80] shrink-0">
-        {/* উপরে সূক্ষ্ম গ্রেডিয়েন্ট অ্যাকসেন্ট লাইন */}
         <div className="absolute top-0 inset-x-10 h-[2px] rounded-full bg-gradient-to-r from-[#43A047] via-[#00796B] to-[#1E88E5]"></div>
 
         <div className="max-w-7xl mx-auto px-4 py-1 flex justify-between items-center relative pb-[max(0.5rem,env(safe-area-inset-bottom))]">
@@ -433,7 +422,6 @@ export default function DashboardPage({ onNavigate }: DashboardProps) {
           <BottomNavItem icon={BookOpenText} label="হিসাব" isSelected={selectedNavIndex === 1} onClick={() => { setSelectedNavIndex(1); onNavigate('reports'); }} />
           
           <div className="relative flex justify-center w-14">
-            {/* প্লাস বাটন (Toggle) */}
             <button 
               onClick={() => setIsQuickActionOpen(!isQuickActionOpen)}
               className={`absolute -top-7 w-14 h-14 bg-gradient-to-br from-[#2E7D32] via-[#00796B] to-[#1565C0] rounded-full flex items-center justify-center shadow-[0_10px_22px_-6px_rgba(21,101,192,0.75)] border-4 border-[#EFF6F3] text-white transition-transform duration-300 cursor-pointer z-[90] ${isQuickActionOpen ? 'rotate-45 scale-110' : 'active:scale-95'}`}
@@ -478,7 +466,6 @@ function GridFeatureButton({ title, icon: Icon, color, onClick }: { title: strin
           boxShadow: `0 6px 12px -4px ${color}99, inset 0 1px 0 rgba(255,255,255,0.35)`
         }}
       >
-        {/* ডেকোরেশন: কোণায় হালকা আলোর বৃত্ত */}
         <span className="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-white/15"></span>
         <Icon className="relative text-white drop-shadow-sm" size={24} strokeWidth={1.9} />
       </div>

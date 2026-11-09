@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { 
   ArrowLeft, Search, QrCode, Trash2, Printer, Share2, 
   CheckCircle, Building2, Truck, Package, AlertTriangle, 
-  ArrowRightLeft, CheckSquare
+  ArrowRightLeft, CheckSquare, Users, X, Phone, MapPin, 
+  Wallet, Plus
 } from 'lucide-react';
 import { toBangla } from '../lib/utils';
 
@@ -12,6 +13,8 @@ import { toBangla } from '../lib/utils';
 interface DepotProduct {
   id: number;
   name: string;
+  category: string;
+  company: string;
   stockQty: number;
   rate: number;
   unit: string;
@@ -25,29 +28,48 @@ interface TransferItem {
   unit: string;
 }
 
+interface Dealer {
+  id: number;
+  name: string;
+  phone: string;
+  market: string;
+  due: number;
+}
+
 interface PageProps {
   onBack: () => void;
 }
 
 export default function DepotPage({ onBack }: PageProps) {
-  // ডামি ডেটা
+  // ১. ডামি ডেটা
   const depots = ["কেন্দ্রীয় গুদাম (হেড অফিস)", "গাজীপুর ডিপো", "সাভার ডিপো"];
-  const dealers = ["ভাই ভাই এগ্রো (গাজীপুর)", "মোল্লা পোল্ট্রি (সাভার)", "বিসমিল্লাহ ফিড (ময়মনসিংহ)"];
+  
+  const initialDealers: Dealer[] = [
+    { id: 1, name: "ভাই ভাই এগ্রো", phone: "01711000001", market: "গাজীপুর", due: 15000 },
+    { id: 2, name: "মোল্লা পোল্ট্রি", phone: "01711000002", market: "সাভার", due: 5000 },
+    { id: 3, name: "বিসমিল্লাহ ফিড", phone: "01711000003", market: "ময়মনসিংহ", due: 0 },
+  ];
   
   const products: DepotProduct[] = [
-    { id: 1, name: "গ্রোয়ার ফিড (২৫ কেজি)", stockQty: 500, rate: 2050, unit: "বস্তা" },
-    { id: 2, name: "রুই পোনা খাদ্য (১০ কেজি)", stockQty: 150, rate: 850, unit: "ব্যাগ" },
-    { id: 3, name: "সরিষার খৈল (৫০ কেজি)", stockQty: 8, rate: 1750, unit: "বস্তা" }, // Low stock
-    { id: 4, name: "চুন ও জীবানুনাশক", stockQty: 200, rate: 420, unit: "বস্তা" },
-    { id: 5, name: "ভিটামিন ও গ্রোথ প্রিমিক্স", stockQty: 4, rate: 360, unit: "প্যাক" } // Low stock
+    { id: 1, name: "গ্রোয়ার ফিড (২৫ কেজি)", category: "মাছের খাদ্য", company: "নিউজা", stockQty: 500, rate: 2050, unit: "বস্তা" },
+    { id: 2, name: "রুই পোনা খাদ্য (১০ কেজি)", category: "মাছের খাদ্য", company: "প্যারাগন", stockQty: 150, rate: 850, unit: "ব্যাগ" },
+    { id: 3, name: "সরিষার খৈল (৫০ কেজি)", category: "মাছের খাদ্য", company: "স্কয়ার", stockQty: 8, rate: 1750, unit: "বস্তা" },
+    { id: 4, name: "চুন ও জীবানুনাশক", category: "ঔষধ ও ভিটামিন", company: "নিপ্রো", stockQty: 200, rate: 420, unit: "বস্তা" },
+    { id: 5, name: "ভিটামিন ও গ্রোথ প্রিমিক্স", category: "ঔষধ ও ভিটামিন", company: "স্কয়ার", stockQty: 4, rate: 360, unit: "প্যাক" }
   ];
 
-  // স্টেট ম্যানেজমেন্ট
-  const [activeTab, setActiveTab] = useState(1); // 0: Stock, 1: Dealer Transfer, 2: Internal, 3: Receive
+  // ২. স্টেট ম্যানেজমেন্ট
+  const [activeTab, setActiveTab] = useState(0); // 0: Stock, 1: Dealer Transfer, 2: Internal, 3: Receive, 4: Dealer List
   const [selectedDepot, setSelectedDepot] = useState(depots[0]);
   
-  // ডিলার ট্রান্সফার স্টেট
-  const [selectedDealer, setSelectedDealer] = useState(dealers[0]);
+  // ডিলার স্টেট
+  const [dealers, setDealers] = useState<Dealer[]>(initialDealers);
+  const [isAddDealerModalOpen, setIsAddDealerModalOpen] = useState(false);
+  const [selectedDealerForLedger, setSelectedDealerForLedger] = useState<Dealer | null>(null);
+  const [newDealerForm, setNewDealerForm] = useState({ name: '', phone: '', market: '' });
+
+  // ট্রান্সফার স্টেট
+  const [selectedDealer, setSelectedDealer] = useState(dealers[0]?.name || "");
   const [vehicleNo, setVehicleNo] = useState("");
   const [driverPhone, setDriverPhone] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
@@ -62,6 +84,7 @@ export default function DepotPage({ onBack }: PageProps) {
   const totalQty = transferCart.reduce((acc, item) => acc + item.quantity, 0);
   const totalValue = transferCart.reduce((acc, item) => acc + (item.quantity * item.rate), 0);
 
+  // অ্যাকশন হ্যান্ডলার
   const handleAddProduct = (prod: DepotProduct) => {
     const existing = transferCart.find(item => item.id === prod.id);
     if (existing) {
@@ -75,7 +98,6 @@ export default function DepotPage({ onBack }: PageProps) {
 
   const updateQty = (index: number, val: number) => {
     const updated = [...transferCart];
-    // মাইনাস ভ্যালু আটকানোর জন্য Math.max ব্যবহার করা হয়েছে
     updated[index].quantity = Math.max(1, val); 
     setTransferCart(updated);
   };
@@ -84,7 +106,6 @@ export default function DepotPage({ onBack }: PageProps) {
     setTransferCart(transferCart.filter((_, i) => i !== index));
   };
 
-  // চালান কনফার্ম করার লজিক (ভ্যালিডেশন সহ)
   const handleConfirmChallan = () => {
     if (transferCart.length === 0) {
       return alert("দয়া করে অন্তত একটি মাল ফর্দিতে যোগ করুন!");
@@ -95,19 +116,29 @@ export default function DepotPage({ onBack }: PageProps) {
     setIsGatePassReady(true);
   };
 
-  // ডেলিভারি সম্পন্ন করার লজিক (স্টেট ক্লিয়ার সহ)
   const handleCompleteDelivery = () => {
     alert("চালান সফল! ডিপো স্টক কমে গেছে এবং ডিলারের খাতায় ব্যালেন্স যোগ হয়েছে।");
-    
-    // ডাটা ক্লিয়ার করা হচ্ছে
     setTransferCart([]);
     setVehicleNo("");
     setDriverPhone("");
     setSearchQuery("");
     setIsGatePassReady(false);
-    setActiveTab(1); // ডিফল্ট ট্যাবে ফেরত যাবে
-    
-    onBack(); // ড্যাশবোর্ডে ফিরে যাবে
+    setActiveTab(1); 
+    onBack(); 
+  };
+
+  const handleAddDealer = () => {
+    if (!newDealerForm.name || !newDealerForm.phone) return alert("নাম এবং ফোন নম্বর আবশ্যক");
+    const newDealer: Dealer = {
+      id: Date.now(),
+      name: newDealerForm.name,
+      phone: newDealerForm.phone,
+      market: newDealerForm.market || 'অজানা',
+      due: 0
+    };
+    setDealers([...dealers, newDealer]);
+    setIsAddDealerModalOpen(false);
+    setNewDealerForm({ name: '', phone: '', market: '' });
   };
 
   return (
@@ -148,6 +179,7 @@ export default function DepotPage({ onBack }: PageProps) {
             {[
               { id: 0, title: "বর্তমান স্টক", icon: Package },
               { id: 1, title: "ডিলার ট্রান্সফার", icon: Truck },
+              { id: 4, title: "ডিলার লিস্ট", icon: Users }, // নতুন ট্যাব
               { id: 2, title: "ইন্টারনাল ট্রান্সফার", icon: ArrowRightLeft },
               { id: 3, title: "রিসিভ ও ড্যামেজ", icon: AlertTriangle }
             ].map(tab => (
@@ -182,7 +214,11 @@ export default function DepotPage({ onBack }: PageProps) {
                 <div key={p.id} className="flex justify-between items-center p-2.5 bg-[#F5FAF7] border border-[#D3E4DB] rounded-lg">
                   <div>
                     <h4 className="font-bold text-xs text-[#0F2A3D]">{p.name}</h4>
-                    <span className="text-[10px] text-gray-500">ভ্যালু: ৳ {toBangla(p.stockQty * p.rate)}</span>
+                    <div className="flex gap-1 mt-1">
+                      <span className="text-[8px] font-bold text-[#0B5C47] bg-[#E8F5E9] px-1.5 py-0.5 rounded border border-[#A5D6A7]">{p.category}</span>
+                      <span className="text-[8px] font-bold text-[#1E88E5] bg-[#EFF6FF] px-1.5 py-0.5 rounded border border-[#B5D2F3]">{p.company}</span>
+                    </div>
+                    <span className="text-[10px] text-gray-500 mt-1 block">ভ্যালু: ৳ {toBangla(p.stockQty * p.rate)}</span>
                   </div>
                   <div className="text-right">
                     <span className={`font-black text-sm ${p.stockQty < 10 ? 'text-red-600' : 'text-[#1B5E20]'}`}>
@@ -201,7 +237,6 @@ export default function DepotPage({ onBack }: PageProps) {
         ============================================================== */}
         {activeTab === 1 && !isGatePassReady && (
           <div className="flex flex-col gap-3">
-            {/* ডিলার ও পরিবহন তথ্য */}
             <div className="bg-white rounded-xl border border-[#D3E4DB] p-3 shadow-sm flex flex-col gap-3">
               <div className="flex items-center gap-2 pb-2 border-b border-[#EFF6F3]">
                 <Building2 size={16} className="text-[#0D3B80]" />
@@ -216,7 +251,7 @@ export default function DepotPage({ onBack }: PageProps) {
                     onChange={(e) => setSelectedDealer(e.target.value)}
                     className="w-full bg-[#F5FAF7] border border-[#D3E4DB] rounded-lg px-2.5 py-1.5 text-xs font-bold text-[#0F2A3D] focus:outline-none"
                   >
-                    {dealers.map(d => <option key={d} value={d}>{d}</option>)}
+                    {dealers.map(d => <option key={d.id} value={d.name}>{d.name}</option>)}
                   </select>
                 </div>
                 <div>
@@ -242,7 +277,6 @@ export default function DepotPage({ onBack }: PageProps) {
               </div>
             </div>
 
-            {/* পণ্য নির্বাচন */}
             <div className="bg-white rounded-xl border border-[#D3E4DB] p-3 shadow-sm flex flex-col gap-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-[#0F2A3D]">পণ্য নির্বাচন করুন</span>
@@ -279,7 +313,6 @@ export default function DepotPage({ onBack }: PageProps) {
               </div>
             </div>
 
-            {/* লাইভ ফর্দি */}
             <div className="bg-white rounded-xl border border-[#D3E4DB] shadow-sm overflow-hidden flex flex-col">
               <div className="bg-[#E2E7E5] px-3 py-1.5 flex items-center justify-between border-b border-[#D3E4DB]">
                 <h3 className="font-bold text-xs text-[#0F2A3D]">ডেলিভারি ফর্দি ({toBangla(totalItems)}টি)</h3>
@@ -328,20 +361,50 @@ export default function DepotPage({ onBack }: PageProps) {
                   <span>মোট পরিমাণ: {toBangla(totalQty)} টি/বস্তা</span>
                   <span>মালের ভ্যালু: ৳ {toBangla(totalValue)}</span>
                 </div>
-                <p className="text-[9px] text-[#D32F2F] font-semibold text-right">
-                  (এই ভ্যালু ডিলারের খাতায় বকেয়া হিসেবে যাবে)
-                </p>
+                <p className="text-[9px] text-[#D32F2F] font-semibold text-right">(এই ভ্যালু ডিলারের খাতায় বকেয়া হিসেবে যাবে)</p>
               </div>
             </div>
 
-            {/* সাবমিট বাটন (ভ্যালিডেশন সহ) */}
-            <button
-              onClick={handleConfirmChallan}
-              className="w-full bg-[#0D3B80] hover:bg-[#1565C0] text-white font-bold py-3 rounded-xl shadow-md flex items-center justify-center gap-2 transition cursor-pointer"
-            >
-              <CheckCircle size={16} />
-              <span className="text-sm">চালান কনফার্ম ও গেট-পাস তৈরি</span>
+            <button onClick={handleConfirmChallan} className="w-full bg-[#0D3B80] hover:bg-[#1565C0] text-white font-bold py-3 rounded-xl shadow-md flex items-center justify-center gap-2 transition cursor-pointer">
+              <CheckCircle size={16} /> <span className="text-sm">চালান কনফার্ম ও গেট-পাস তৈরি</span>
             </button>
+          </div>
+        )}
+
+        {/* ==============================================================
+            ট্যাব ৪: ডিলার লিস্ট (Dealer List) - নতুন
+        ============================================================== */}
+        {activeTab === 4 && !isGatePassReady && (
+          <div className="flex flex-col gap-3">
+            <div className="flex justify-between items-center bg-white p-3 rounded-xl border border-[#D3E4DB] shadow-sm">
+              <div>
+                <h3 className="font-bold text-sm text-[#0F2A3D]">ডিলার তালিকা</h3>
+                <p className="text-[10px] text-gray-500">মোট ডিলার: {toBangla(dealers.length)} জন</p>
+              </div>
+              <button onClick={() => setIsAddDealerModalOpen(true)} className="bg-[#1E88E5] text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm flex items-center gap-1 active:scale-95">
+                <Plus size={14}/> নতুন ডিলার
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              {dealers.map(dealer => (
+                <div key={dealer.id} onClick={() => setSelectedDealerForLedger(dealer)} className="bg-white border border-[#D3E4DB] rounded-xl p-3 shadow-sm flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-[#EFF6FF] rounded-full flex items-center justify-center text-[#1E88E5] shrink-0">
+                      <Building2 size={20} />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-sm text-[#0F2A3D]">{dealer.name}</h4>
+                      <p className="text-[10px] text-gray-500 flex items-center gap-1 mt-0.5"><Phone size={10}/> {toBangla(dealer.phone)} | <MapPin size={10}/> {dealer.market}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className={`font-black text-sm ${dealer.due > 0 ? 'text-red-500' : 'text-[#1B5E20]'}`}>৳ {toBangla(dealer.due)}</p>
+                    <p className="text-[9px] font-bold text-gray-500">বাকি</p>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -357,12 +420,11 @@ export default function DepotPage({ onBack }: PageProps) {
         )}
 
         {/* ==============================================================
-            গেট-পাস প্রিন্ট ভিউ (ফাইনাল ডেলিভারি চালান)
+            গেট-পাস প্রিন্ট ভিউ
         ============================================================== */}
         {isGatePassReady && (
           <div className="flex flex-col gap-3 items-center">
             <div className="w-full max-w-lg bg-white border border-gray-400 rounded-xl p-4 sm:p-5 shadow-sm flex flex-col">
-              
               <div className="text-center pb-2 border-b border-dashed border-gray-400">
                 <h2 className="text-lg sm:text-xl font-black text-[#1B5E20]">DREAM AGRO & FISHERIES</h2>
                 <h3 className="text-xs font-bold text-[#0F2A3D] mt-1">ডেলিভারি চালান / গেট-পাস</h3>
@@ -377,9 +439,7 @@ export default function DepotPage({ onBack }: PageProps) {
                   <span>গাড়ি নং: {vehicleNo || "দেওয়া হয়নি"}</span>
                   <span>তারিখ: {currentDate}</span>
                 </div>
-                <div className="text-gray-600">
-                  <span>ড্রাইভার: {driverPhone || "দেওয়া হয়নি"}</span>
-                </div>
+                <div className="text-gray-600"><span>ড্রাইভার: {driverPhone || "দেওয়া হয়নি"}</span></div>
               </div>
 
               <div className="py-2 border-b border-dashed border-gray-400">
@@ -414,7 +474,6 @@ export default function DepotPage({ onBack }: PageProps) {
               </div>
             </div>
 
-            {/* অ্যাকশন বাটন */}
             <div className="flex w-full max-w-lg gap-2 mt-2">
               <button onClick={() => window.print()} className="flex-1 bg-[#0D3B80] text-white py-2.5 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 shadow cursor-pointer hover:bg-[#1565C0]">
                 <Printer size={15} /> <span>গেট-পাস প্রিন্ট</span>
@@ -424,16 +483,90 @@ export default function DepotPage({ onBack }: PageProps) {
               </button>
             </div>
 
-            {/* ডেলিভারি সম্পন্ন বাটন (স্টেট ক্লিয়ার সহ) */}
-            <button 
-              onClick={handleCompleteDelivery}
-              className="w-full max-w-lg bg-white border-2 border-[#1B5E20] text-[#1B5E20] py-2.5 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer hover:bg-[#E8F5E9] mt-1"
-            >
+            <button onClick={handleCompleteDelivery} className="w-full max-w-lg bg-white border-2 border-[#1B5E20] text-[#1B5E20] py-2.5 rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer hover:bg-[#E8F5E9] mt-1">
               <CheckSquare size={16} /> <span>ডেলিভারি সম্পন্ন করুন</span>
             </button>
           </div>
         )}
       </main>
+
+      {/* ================= মডাল: নতুন ডিলার যুক্ত করুন ================= */}
+      {isAddDealerModalOpen && (
+        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="bg-[#0B5C47] p-3 flex justify-between items-center text-white">
+              <h2 className="font-bold text-base">নতুন ডিলার যুক্ত করুন</h2>
+              <button onClick={() => setIsAddDealerModalOpen(false)} className="p-1 bg-white/20 rounded-full"><X size={18}/></button>
+            </div>
+            <div className="p-4 flex flex-col gap-3">
+              <div>
+                <label className="text-xs font-bold text-gray-600 mb-1 block">ডিলারের নাম <span className="text-red-500">*</span></label>
+                <input type="text" value={newDealerForm.name} onChange={e => setNewDealerForm({...newDealerForm, name: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-[#0B5C47]" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-600 mb-1 block">ফোন নম্বর <span className="text-red-500">*</span></label>
+                <input type="text" value={newDealerForm.phone} onChange={e => setNewDealerForm({...newDealerForm, phone: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-[#0B5C47]" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-gray-600 mb-1 block">মার্কেট / এলাকা</label>
+                <input type="text" value={newDealerForm.market} onChange={e => setNewDealerForm({...newDealerForm, market: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-[#0B5C47]" />
+              </div>
+            </div>
+            <div className="p-3 border-t bg-gray-50">
+              <button onClick={handleAddDealer} className="w-full bg-[#1E88E5] text-white py-2.5 rounded-lg font-bold shadow-md">সেভ করুন</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= মডাল: ডিলার লেজার (বিস্তারিত) ================= */}
+      {selectedDealerForLedger && (
+        <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col">
+            <div className="bg-[#0B5C47] p-4 flex justify-between items-center text-white shrink-0">
+              <div>
+                <h2 className="font-bold text-base">{selectedDealerForLedger.name}</h2>
+                <p className="text-[10px] text-cyan-200">{toBangla(selectedDealerForLedger.phone)} | {selectedDealerForLedger.market}</p>
+              </div>
+              <button onClick={() => setSelectedDealerForLedger(null)} className="p-1 bg-white/20 rounded-full"><X size={18}/></button>
+            </div>
+            
+            <div className="p-4 flex-1 overflow-y-auto">
+              <div className="bg-[#F3F4F6] p-3 rounded-xl border border-gray-200 text-center mb-4">
+                <p className="text-xs font-bold text-gray-600">মোট বাকি</p>
+                <p className={`font-black text-2xl mt-1 ${selectedDealerForLedger.due > 0 ? 'text-red-500' : 'text-[#1B5E20]'}`}>
+                  ৳ {toBangla(selectedDealerForLedger.due)}
+                </p>
+              </div>
+              
+              <h4 className="font-bold text-sm text-gray-800 mb-2">সাম্প্রতিক লেনদেন</h4>
+              <div className="flex flex-col gap-2">
+                {/* ডেমু লেনদেন */}
+                <div className="bg-white border border-gray-200 p-2.5 rounded-lg flex justify-between items-center">
+                  <div>
+                    <p className="text-xs font-bold text-gray-800">চালান # DC-8092</p>
+                    <p className="text-[10px] text-gray-500">০৭ নভেম্বর, ২৬</p>
+                  </div>
+                  <span className="text-sm font-black text-red-500">৳ ১৫,০০০</span>
+                </div>
+                <div className="bg-white border border-gray-200 p-2.5 rounded-lg flex justify-between items-center">
+                  <div>
+                    <p className="text-xs font-bold text-gray-800">নগদ জমা</p>
+                    <p className="text-[10px] text-gray-500">০৫ নভেম্বর, ২৬</p>
+                  </div>
+                  <span className="text-sm font-black text-green-500">৳ ৫,০০০</span>
+                </div>
+              </div>
+            </div>
+            <div className="p-3 border-t bg-gray-50">
+              <button className="w-full bg-[#1E88E5] text-white py-2.5 rounded-lg font-bold shadow-md flex items-center justify-center gap-2">
+                <Wallet size={16}/> টাকা জমা নিন
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

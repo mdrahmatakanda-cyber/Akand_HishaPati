@@ -3,7 +3,7 @@ import {
   // হেডার
   RefreshCcw, Headset, Mail,
   // সামারি
-  Wallet, PiggyBank, ShoppingBasket,
+  ShoppingBasket, // <--- Wallet এবং PiggyBank বাদ দেওয়া হলো
   // মেইন অ্যাকশন
   PackagePlus, ReceiptText, Wheat, Fish,
   // খাতা সমূহ
@@ -182,32 +182,10 @@ export default function DashboardPage({ onNavigate, currentMode, modeConfig }: D
       {/* ============================================================== */}
       <main ref={mainRef} className="flex-1 min-h-0 overflow-y-auto w-full max-w-7xl mx-auto p-2.5 flex flex-col gap-2.5 pb-28 scrollbar-hide">
         
-        {/* ২. সামারি সেকশন */}
+               {/* ২. সামারি সেকশন */}
         <div className="bg-white rounded-[18px] border border-[#D1E7DD] p-2 shadow-[0_8px_22px_-10px_rgba(11,92,71,0.4)] shrink-0">
-          <div className="flex w-full gap-1.5 pb-2 border-b border-gray-100">
-            <div className="flex-1 bg-gradient-to-b from-[#DDF3E2] to-white border border-[#B4DFBF] rounded-xl p-1.5 flex flex-col items-center justify-center min-w-0 shadow-[0_3px_8px_-4px_rgba(22,101,52,0.5)]">
-              <span className="flex items-center justify-center gap-1 w-full min-w-0 text-[10px] font-bold text-[#166534]">
-                <Wallet size={12} strokeWidth={2.4} className="shrink-0" />
-                <span className="truncate">ক্যাশ ব্যালেন্স</span>
-              </span>
-              <span className="text-[13px] font-black text-[#166534] truncate w-full text-center mt-0.5">৳ {toBangla("1,80,000")}</span>
-            </div>
-            <div className="flex-1 bg-gradient-to-b from-[#DCEBFC] to-white border border-[#B5D2F3] rounded-xl p-1.5 flex flex-col items-center justify-center min-w-0 shadow-[0_3px_8px_-4px_rgba(30,64,175,0.5)]">
-              <span className="flex items-center justify-center gap-1 w-full min-w-0 text-[10px] font-bold text-[#1E40AF]">
-                <PiggyBank size={12} strokeWidth={2.4} className="shrink-0" />
-                <span className="truncate">মোট ইনভেস্ট</span>
-              </span>
-              <span className="text-[13px] font-black text-[#1E40AF] truncate w-full text-center mt-0.5">৳ {toBangla("5,00,000")}</span>
-            </div>
-            <div className="flex-1 bg-gradient-to-b from-[#D6F1EE] to-white border border-[#A5DDD6] rounded-xl p-1.5 flex flex-col items-center justify-center min-w-0 shadow-[0_3px_8px_-4px_rgba(15,118,110,0.5)]">
-              <span className="flex items-center justify-center gap-1 w-full min-w-0 text-[10px] font-bold text-[#0F766E]">
-                <ShoppingBasket size={12} strokeWidth={2.4} className="shrink-0" />
-                <span className="truncate">মোট ক্রয়</span>
-              </span>
-              <span className="text-[13px] font-black text-[#0F766E] truncate w-full text-center mt-0.5">৳ {toBangla("3,20,000")}</span>
-            </div>
-          </div>
-
+          
+          {/* দৈনিক / সাপ্তাহিক / মাসিক টগল */}
           <div className="flex justify-between items-center py-2">
             <span className="text-[12px] font-bold text-[#0F2A3D]">
               {prefix} হিসাব বিবরণী
@@ -240,6 +218,7 @@ export default function DashboardPage({ onNavigate, currentMode, modeConfig }: D
             </div>
           </div>
 
+          {/* বিক্রি, খরচ ও বাকি বক্স (উপরের ৩টি কার্ড বাদ দেওয়া হয়েছে) */}
           <div className="flex w-full gap-1.5">
             <div className="flex-1 bg-gradient-to-b from-[#F1FAF3] to-white border border-[#CDE8D4] rounded-xl p-1.5 flex flex-col items-center justify-center shadow-sm">
               <span className="text-[10px] text-[#334155] font-bold mb-0.5 whitespace-nowrap">{prefix} বিক্রি</span>
@@ -348,7 +327,7 @@ export default function DashboardPage({ onNavigate, currentMode, modeConfig }: D
             <GridFeatureButton title="যোগাযোগ" icon={Contact} color="#00796B" onClick={() => onNavigate('contacts')} />
             <GridFeatureButton title="প্রোডাক্ট লিস্ট" icon={PackageSearch} color="#0D47A1" onClick={() => onNavigate('product_list')} />
             <GridFeatureButton title="স্টকের হিসাব" icon={ClipboardList} color="#43A047" onClick={() => onNavigate('stock')} />
-            <GridFeatureButton title="ব্যবসার রিপোর্ট" icon={TrendingUp} color="#1E88E5" onClick={() => onNavigate('reports')} />
+            <GridFeatureButton title="দোকান রিপোর্ট" icon={TrendingUp} color="#1E88E5" onClick={() => onNavigate('reports')} />
           </DepartmentSection>
         )}
 

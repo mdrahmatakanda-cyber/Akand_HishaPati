@@ -1,56 +1,110 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { 
   ArrowLeft, FileText, HelpCircle, Search, 
-  ChevronLeft, ChevronRight, CalendarDays, Tag, X, Check, Building2
+  ChevronLeft, ChevronRight, Tag, X, Check, Loader2
 } from 'lucide-react';
 import { toBangla } from '../lib/utils';
+import { useAppContext } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
 
 interface PurchaseKhataProps {
   onBack: () => void;
-  onNavigate: (screen: string) => void;
+  onNavigate: (screen: string, id?: string) => void;
 }
 
-// ডেমু ক্যাটাগরি, কোম্পানি ও লেনদেন ডাটা
-const allCategories = ['মাছের খাদ্য', 'ঔষধ ও ভিটামিন', 'যন্ত্রপাতি'];
-const allCompanies = ['ভাই ভাই এগ্রো', 'মোল্লা পোল্ট্রি', 'নিউজা'];
-
-const initialData = [
-  { id: 1, receiptNo: 'JTMPBC953J7J20P', amount: 1900, itemNames: 'গ্রোয়ার ফিড', category: 'মাছের খাদ্য', company: 'নিউজা', paymentType: 'নগদ টাকা', date: '2026-11-07', time: '10:56' },
-  { id: 2, receiptNo: 'A64X178X00YJAXZ', amount: 4000, itemNames: 'অক্সিজেন পাম্প', category: 'যন্ত্রপাতি', company: 'মোল্লা পোল্ট্রি', paymentType: 'নগদ টাকা', date: '2026-11-06', time: '10:55' },
-  { id: 3, receiptNo: 'X0C2J8CJXMBGS17', amount: 280, itemNames: 'ক্যালসিয়াম পাউডার', category: 'ঔষধ ও ভিটামিন', company: 'ভাই ভাই এগ্রো', paymentType: 'বাকি', date: '2026-11-05', time: '10:23' },
-  { id: 4, receiptNo: 'ZEHBZX4W1YEQK9J', amount: 1600, itemNames: 'ফ্লোটিং ফিড', category: 'মাছের খাদ্য', company: 'নিউজা', paymentType: 'নগদ টাকা', date: '2026-10-19', time: '02:43' },
-];
-
 export default function PurchaseKhataPage({ onBack, onNavigate }: PurchaseKhataProps) {
+  const { isDemoMode } = useAppContext();
+  const { activeBusiness } = useAuth();
+
   const [activeFilter, setActiveFilter] = useState('month');
   const [searchQuery, setSearchQuery] = useState('');
   const [dateRange, setDateRange] = useState('০১ নভেম্বর, ২৬ - ৩০ নভেম্বর, ২৬');
   
-  // নতুন ফিল্টার স্টেট
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedCompany, setSelectedCompany] = useState<string | null>(null);
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
 
-  // সার্চ ও ফিল্টার লজিক
+  const [purchases, setPurchases] = useState<any[]>([]);
+  const [allCategories, setAllCategories] = useState<string[]>([]);
+  const [allCompanies, setAllCompanies] = useState<string[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      setIsLoading(true);
+      try {
+        if (isDemoMode) {
+          setAllCategories(['মাছের খাদ্য', 'ঔষধ ও ভিটামিন', 'যন্ত্রপাতি']);
+          setAllCompanies(['ভাই ভাই এগ্রো', 'মোল্লা পোল্ট্রি', 'নিউজা']);
+          setPurchases([
+            { id: '1', receiptNo: 'JTMPBC953J7J20P', amount: 1900, itemNames: 'গ্রোয়ার ফিড', category: 'মাছের খাদ্য', company: 'নিউজা', paymentType: 'নগদ টাকা', date: '07 Nov 2026', time: '10:56' },
+            { id: '2', receiptNo: 'A64X178X00YJAXZ', amount: 4000, itemNames: 'অক্সিজেন পাম্প', category: 'যন্ত্রপাতি', company: 'মোল্লা পোল্ট্রি', paymentType: 'নগদ টাকা', date: '06 Nov 2026', time: '10:55' },
+            { id: '3', receiptNo: 'X0C2J8CJXMBGS17', amount: 280, itemNames: 'ক্যালসিয়াম পাউডার', category: 'ঔষধ ও ভিটামিন', company: 'ভাই ভাই এগ্রো', paymentType: 'বাকি', date: '05 Nov 2026', time: '10:23' },
+          ]);
+        } else {
+          if (!activeBusiness?.id) return;
+
+          const { data, error } = await supabase
+            .from('purchases')
+            .select('id, challan_no, total_amount, payment_method, purchase_date, suppliers(name), purchase_items(products(name, categories(name)))')
+            .eq('business_id', activeBusiness.id)
+            .order('purchase_date', { ascending: false });
+
+          if (error) throw error;
+
+          if (data) {
+            const mapped = data.map((p: any) => {
+              const d = new Date(p.purchase_date);
+              return {
+                id: p.id, // 👈 আইডি পাস করা হলো
+                receiptNo: p.challan_no || p.id.substring(0, 8).toUpperCase(),
+                amount: Number(p.total_amount) || 0, // 👈 String থেকে Number এ কনভার্ট
+                itemNames: p.purchase_items?.map((i: any) => i.products?.name).join(', ') || 'পণ্য নেই',
+                category: p.purchase_items?.[0]?.products?.categories?.name || 'সাধারণ',
+                company: p.suppliers?.name || 'অজানা সাপ্লায়ার',
+                paymentType: p.payment_method === 'cash' ? 'নগদ টাকা' : 'বাকি',
+                date: d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+                time: d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+              };
+            });
+            setPurchases(mapped);
+
+            const cats = Array.from(new Set(mapped.map(m => m.category).filter(c => c !== 'সাধারণ')));
+            const comps = Array.from(new Set(mapped.map(m => m.company).filter(c => c !== 'অজানা সাপ্লায়ার')));
+            setAllCategories(cats as string[]);
+            setAllCompanies(comps as string[]);
+          }
+        }
+      } catch (error) {
+        console.error(error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchData();
+  }, [isDemoMode, activeBusiness?.id]);
+
   const filteredData = useMemo(() => {
-    return initialData.filter(item => {
+    return purchases.filter(item => {
       const matchSearch = item.receiptNo.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           item.itemNames.includes(searchQuery) ||
                           item.amount.toString().includes(searchQuery);
       const matchCategory = !selectedCategory || item.category === selectedCategory;
       const matchCompany = !selectedCompany || item.company === selectedCompany;
       
-      // ডেমু ডেট ফিল্টার (শুধু নভেম্বর মাসের ডাটা আছে)
-      const matchDate = activeFilter === 'all' || item.date.startsWith('2026-11');
+      let matchDate = true;
+      if (activeFilter === 'month') matchDate = item.date.includes('Nov 2026') || item.date.includes('নভেম্বর');
+      else if (activeFilter === 'day') matchDate = item.date.includes('07 Nov 2026') || item.date.includes('০৭ নভেম্বর');
+      else if (activeFilter === 'year') matchDate = item.date.includes('2026');
       
       return matchSearch && matchCategory && matchCompany && matchDate;
     });
-  }, [searchQuery, selectedCategory, selectedCompany, activeFilter]);
+  }, [searchQuery, selectedCategory, selectedCompany, activeFilter, purchases]);
 
-  // মোট কেনা হিসাব
-  const totalPurchase = filteredData.reduce((acc, curr) => acc + curr.amount, 0);
+  // 👈 Number() নিশ্চিত করা হলো যাতে স্ট্রিং কনক্যাটিনেশন না হয়
+  const totalPurchase = filteredData.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
 
-  // ফিল্টার ক্লিয়ার
   const clearFilters = () => {
     setSelectedCategory(null);
     setSelectedCompany(null);
@@ -59,7 +113,6 @@ export default function PurchaseKhataPage({ onBack, onNavigate }: PurchaseKhataP
 
   return (
     <div className="h-[100dvh] bg-[#EFF6F3] text-[#0F2A3D] font-serif flex flex-col overflow-hidden w-full relative">
-      {/* হেডার */}
       <header className="bg-gradient-to-r from-[#0B5C47] to-[#062D5E] text-white shadow-md shrink-0 z-40">
         <div className="px-3 py-2.5 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -80,8 +133,6 @@ export default function PurchaseKhataPage({ onBack, onNavigate }: PurchaseKhataP
       </header>
 
       <main className="flex-1 overflow-y-auto flex flex-col pb-6 scrollbar-hide">
-        
-        {/* সামারি কার্ড */}
         <div className="bg-[#1E88E5] text-white p-3 pb-4 rounded-2xl shadow-md mx-2 mt-2">
           <div className="flex justify-between items-center mb-1">
             <button className="p-1 hover:bg-white/20 rounded-full transition"><ChevronLeft size={20} /></button>
@@ -94,18 +145,13 @@ export default function PurchaseKhataPage({ onBack, onNavigate }: PurchaseKhataP
           </div>
         </div>
 
-        {/* ডেট ফিল্টার */}
         <div className="flex gap-2 px-2 mt-3 overflow-x-auto scrollbar-hide py-1 flex-nowrap shrink-0">
           <FilterButton title="দিন" isActive={activeFilter === 'day'} onClick={() => { setActiveFilter('day'); setDateRange('০৭ নভেম্বর, ২৬'); }} />
           <FilterButton title="মাস" isActive={activeFilter === 'month'} onClick={() => { setActiveFilter('month'); setDateRange('০১ নভেম্বর, ২৬ - ৩০ নভেম্বর, ২৬'); }} />
           <FilterButton title="বছর" isActive={activeFilter === 'year'} onClick={() => { setActiveFilter('year'); setDateRange('০১ জানুয়ারী, ২৬ - ৩১ ডিসেম্বর, ২৬'); }} />
           <FilterButton title="সব সময়" isActive={activeFilter === 'all'} onClick={() => { setActiveFilter('all'); setDateRange('সব সময়'); }} />
-          <button onClick={() => setActiveFilter('custom')} className={`flex items-center gap-1 px-3 py-1.5 rounded-lg border text-xs font-bold whitespace-nowrap transition ${activeFilter === 'custom' ? 'bg-[#0B5C47] text-white border-[#0B5C47]' : 'bg-white text-gray-600 border-gray-300'}`}>
-            <CalendarDays size={14} /> কাস্টম
-          </button>
         </div>
 
-        {/* সার্চ ও অ্যাডভান্সড ফিল্টার বার */}
         <div className="px-2 mt-2 flex gap-2 shrink-0">
           <div className="flex-1 bg-white border border-gray-300 rounded-xl px-3 py-2 flex items-center gap-2 shadow-sm focus-within:border-[#0B5C47] transition-colors">
             <Search size={20} className="text-gray-400" />
@@ -125,13 +171,14 @@ export default function PurchaseKhataPage({ onBack, onNavigate }: PurchaseKhataP
           </button>
         </div>
 
-        {/* রিসিপ্ট লিস্ট */}
         <div className="p-2 flex flex-col gap-2 mt-1">
-          {filteredData.length > 0 ? (
+          {isLoading ? (
+            <div className="flex justify-center items-center mt-10"><Loader2 className="animate-spin text-[#0B5C47]" size={32}/></div>
+          ) : filteredData.length > 0 ? (
             filteredData.map((item) => (
               <div 
                 key={item.id} 
-                onClick={() => onNavigate('purchase_details')}
+                onClick={() => onNavigate('purchase_details', item.id)} // 👈 নির্দিষ্ট আইডি পাস করা হলো
                 className="bg-[#F3F4F6] rounded-xl p-3 border border-gray-200 shadow-sm relative cursor-pointer active:scale-[0.98] transition-transform"
               >
                 <div className="flex justify-between items-start">
@@ -151,7 +198,7 @@ export default function PurchaseKhataPage({ onBack, onNavigate }: PurchaseKhataP
                   </div>
                 </div>
                 <div className="text-right mt-1">
-                  <p className="text-[10px] text-gray-500 font-medium">{toBangla(item.date)} | {toBangla(item.time)}</p>
+                  <p className="text-[10px] text-gray-500 font-medium">{item.date} | {item.time}</p>
                 </div>
               </div>
             ))
@@ -161,51 +208,34 @@ export default function PurchaseKhataPage({ onBack, onNavigate }: PurchaseKhataP
         </div>
       </main>
 
-      {/* ================= ফিল্টার মডাল ================= */}
+      {/* ফিল্টার মডাল (আগের মতোই থাকবে) */}
       {isFilterModalOpen && (
         <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl w-full max-w-xs overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
             <div className="bg-[#0B5C47] p-3 flex justify-between items-center text-white">
-              <h2 className="font-bold text-sm flex items-center gap-2"><Tag size={16}/> ক্যাটাগরি ও কোম্পানি ফিল্টার</h2>
+              <h2 className="font-bold text-sm flex items-center gap-2"><Tag size={16}/> ফিল্টার</h2>
               <button onClick={() => setIsFilterModalOpen(false)} className="p-1 bg-white/20 rounded-full"><X size={16}/></button>
             </div>
-            
             <div className="p-3 flex flex-col gap-4 max-h-[60vh] overflow-y-auto">
-              {/* ক্যাটাগরি ফিল্টার */}
               <div>
-                <p className="text-xs font-bold text-gray-600 mb-2 border-b pb-1 flex items-center gap-1"><Tag size={12}/> ক্যাটাগরি নির্বাচন করুন</p>
+                <p className="text-xs font-bold text-gray-600 mb-2 border-b pb-1">ক্যাটাগরি</p>
                 <div className="flex flex-col gap-1.5">
-                  <button onClick={() => setSelectedCategory(null)} className={`flex justify-between items-center p-2 rounded-lg border text-sm ${!selectedCategory ? 'border-[#0B5C47] bg-[#E8F5E9] text-[#0B5C47]' : 'border-gray-200 text-gray-700'}`}>
-                    সব ক্যাটাগরি
-                    {!selectedCategory && <Check size={16}/>}
-                  </button>
+                  <button onClick={() => setSelectedCategory(null)} className={`flex justify-between items-center p-2 rounded-lg border text-sm ${!selectedCategory ? 'border-[#0B5C47] bg-[#E8F5E9] text-[#0B5C47]' : 'border-gray-200 text-gray-700'}`}>সব ক্যাটাগরি {!selectedCategory && <Check size={16}/>}</button>
                   {allCategories.map(cat => (
-                    <button key={cat} onClick={() => setSelectedCategory(cat)} className={`flex justify-between items-center p-2 rounded-lg border text-sm ${selectedCategory === cat ? 'border-[#0B5C47] bg-[#E8F5E9] text-[#0B5C47]' : 'border-gray-200 text-gray-700'}`}>
-                      {cat}
-                      {selectedCategory === cat && <Check size={16}/>}
-                    </button>
+                    <button key={cat} onClick={() => setSelectedCategory(cat)} className={`flex justify-between items-center p-2 rounded-lg border text-sm ${selectedCategory === cat ? 'border-[#0B5C47] bg-[#E8F5E9] text-[#0B5C47]' : 'border-gray-200 text-gray-700'}`}>{cat} {selectedCategory === cat && <Check size={16}/>}</button>
                   ))}
                 </div>
               </div>
-
-              {/* কোম্পানি ফিল্টার */}
               <div>
-                <p className="text-xs font-bold text-gray-600 mb-2 border-b pb-1 flex items-center gap-1"><Building2 size={12}/> কোম্পানি নির্বাচন করুন</p>
+                <p className="text-xs font-bold text-gray-600 mb-2 border-b pb-1">কোম্পানি</p>
                 <div className="flex flex-col gap-1.5">
-                  <button onClick={() => setSelectedCompany(null)} className={`flex justify-between items-center p-2 rounded-lg border text-sm ${!selectedCompany ? 'border-[#1E88E5] bg-[#EFF6FF] text-[#1E88E5]' : 'border-gray-200 text-gray-700'}`}>
-                    সব কোম্পানি
-                    {!selectedCompany && <Check size={16}/>}
-                  </button>
+                  <button onClick={() => setSelectedCompany(null)} className={`flex justify-between items-center p-2 rounded-lg border text-sm ${!selectedCompany ? 'border-[#1E88E5] bg-[#EFF6FF] text-[#1E88E5]' : 'border-gray-200 text-gray-700'}`}>সব কোম্পানি {!selectedCompany && <Check size={16}/>}</button>
                   {allCompanies.map(comp => (
-                    <button key={comp} onClick={() => setSelectedCompany(comp)} className={`flex justify-between items-center p-2 rounded-lg border text-sm ${selectedCompany === comp ? 'border-[#1E88E5] bg-[#EFF6FF] text-[#1E88E5]' : 'border-gray-200 text-gray-700'}`}>
-                      {comp}
-                      {selectedCompany === comp && <Check size={16}/>}
-                    </button>
+                    <button key={comp} onClick={() => setSelectedCompany(comp)} className={`flex justify-between items-center p-2 rounded-lg border text-sm ${selectedCompany === comp ? 'border-[#1E88E5] bg-[#EFF6FF] text-[#1E88E5]' : 'border-gray-200 text-gray-700'}`}>{comp} {selectedCompany === comp && <Check size={16}/>}</button>
                   ))}
                 </div>
               </div>
             </div>
-
             <div className="p-3 border-t bg-gray-50 flex gap-2">
               <button onClick={clearFilters} className="flex-1 bg-white border border-gray-300 text-gray-700 py-2 rounded-lg font-bold shadow-sm">রিসেট</button>
               <button onClick={() => setIsFilterModalOpen(false)} className="flex-1 bg-[#1E88E5] text-white py-2 rounded-lg font-bold shadow-md">অ্যাপ্লাই</button>
@@ -219,10 +249,7 @@ export default function PurchaseKhataPage({ onBack, onNavigate }: PurchaseKhataP
 
 function FilterButton({ title, isActive, onClick }: { title: string, isActive: boolean, onClick: () => void }) {
   return (
-    <button 
-      onClick={onClick}
-      className={`px-4 py-1.5 rounded-lg border text-xs font-bold whitespace-nowrap transition ${isActive ? 'bg-[#1E88E5] text-white border-[#1E88E5]' : 'bg-white text-gray-600 border-gray-300'}`}
-    >
+    <button onClick={onClick} className={`px-4 py-1.5 rounded-lg border text-xs font-bold whitespace-nowrap transition ${isActive ? 'bg-[#1E88E5] text-white border-[#1E88E5]' : 'bg-white text-gray-600 border-gray-300'}`}>
       {title}
     </button>
   );

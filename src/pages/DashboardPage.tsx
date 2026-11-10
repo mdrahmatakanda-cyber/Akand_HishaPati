@@ -3,7 +3,7 @@ import {
   // হেডার
   RefreshCcw, Headset, Mail,
   // সামারি
-  ShoppingBasket, // <--- Wallet এবং PiggyBank বাদ দেওয়া হলো
+  ShoppingBasket,
   // মেইন অ্যাকশন
   PackagePlus, ReceiptText, Wheat, Fish,
   // খাতা সমূহ
@@ -18,17 +18,20 @@ import {
   Calculator, X, Home, BookOpenText, Boxes, LayoutGrid, Plus
 } from 'lucide-react';
 import { toBangla } from '../lib/utils'; 
+import { useAppContext } from '../context/AppContext';
+import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
+import { demoDashboardStats } from '../lib/demoData';
 
 type TimePeriod = 'TODAY' | 'WEEK' | 'MONTH';
 
-// নতুন প্রপ্স ইন্টারফেস
 interface DashboardProps {
   onNavigate: (screen: string) => void;
   currentMode: 'shop' | 'depot' | 'general';
   modeConfig: any;
 }
 
-// রঙ গাঢ় করার সহায়ক ফাংশন (বাটনের গ্রেডিয়েন্টের জন্য)
+// রঙ গাঢ় করার সহায়ক ফাংশন
 function shade(hex: string, amount: number): string {
   const n = parseInt(hex.replace('#', ''), 16);
   const r = Math.round(((n >> 16) & 255) * (1 - amount));
@@ -38,16 +41,20 @@ function shade(hex: string, amount: number): string {
 }
 
 export default function DashboardPage({ onNavigate, currentMode, modeConfig }: DashboardProps) {
+  const { isDemoMode } = useAppContext();
+  const { activeBusiness } = useAuth();
+
   const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>('TODAY');
   const [selectedNavIndex, setSelectedNavIndex] = useState(0);
   const [currentSlide, setCurrentSlide] = useState<number>(0);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [isQuickActionOpen, setIsQuickActionOpen] = useState<boolean>(false);
   
-  // ইনবক্স নোটিফিকেশন কাউন্টার
+  // ডাটা স্টেট
+  const [dashboardStats, setDashboardStats] = useState<any>(null);
+  const [isDataLoading, setIsDataLoading] = useState<boolean>(true);
   const [unreadCount, setUnreadCount] = useState<number>(2);
 
-  // স্ক্রল পজিশন সেভ করার জন্য Ref
   const mainRef = useRef<HTMLElement>(null);
 
   const bannerImages = [
@@ -56,6 +63,7 @@ export default function DashboardPage({ onNavigate, currentMode, modeConfig }: D
     "/banners/slide3.jpg"
   ];
 
+  // ১. ব্যানার স্লাইডার লজিক
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentSlide((prev) => (prev + 1) % bannerImages.length);
@@ -63,7 +71,7 @@ export default function DashboardPage({ onNavigate, currentMode, modeConfig }: D
     return () => clearInterval(timer);
   }, [bannerImages.length]);
 
-  // স্ক্রল পজিশন রিস্টোর এবং সেভ করার লজিক
+  // ২. স্ক্রল পজিশন রিস্টোর এবং সেভ করার লজিক
   useEffect(() => {
     const savedScroll = sessionStorage.getItem('dashboard_scroll_y');
     if (savedScroll && mainRef.current) {
@@ -88,16 +96,57 @@ export default function DashboardPage({ onNavigate, currentMode, modeConfig }: D
     };
   }, []);
 
+  // ৩. ডাটা ফেচিং লজিক (ডেমু ও রিয়েল)
+  useEffect(() => {
+    const fetchStats = async () => {
+      if (!isDemoMode && !activeBusiness?.id) {
+        setIsDataLoading(false);
+        return;
+      }
+
+      setIsDataLoading(true);
+      try {
+        if (isDemoMode) {
+          await new Promise(resolve => setTimeout(resolve, 300)); // সিমুলেট লোডিং
+          const demoData = demoDashboardStats[selectedPeriod];
+          setDashboardStats(demoData);
+          setUnreadCount(demoData.unread_inbox);
+        } else {
+          // রিয়েল মোড: Supabase RPC কল
+          const { data, error } = await supabase.rpc('get_dashboard_stats', {
+            p_period: selectedPeriod,
+            p_business_id: activeBusiness?.id
+          });
+          if (error) throw error;
+          setDashboardStats(data);
+          if (data?.unread_inbox !== undefined) {
+            setUnreadCount(data.unread_inbox);
+          }
+        }
+      } catch (error) {
+        console.error("Dashboard data fetch error:", error);
+      } finally {
+        setIsDataLoading(false);
+      }
+    };
+
+    fetchStats();
+  }, [isDemoMode, selectedPeriod, activeBusiness?.id]);
+
   const handleRefresh = () => {
     setIsRefreshing(true);
     setTimeout(() => setIsRefreshing(false), 800);
   };
 
-  // সেকশন দেখানো বা লুকানোর হেল্পার ফাংশন
   const isSectionVisible = (sectionKey: string) => {
-    // যদি কনফিগারেশনে সেকশনটি না থাকে, তবে ডিফল্টভাবে দেখাবে
     if (!modeConfig[sectionKey]) return true;
     return modeConfig[sectionKey][currentMode] ?? true;
+  };
+
+  // টাকা ফরম্যাট করার হেল্পার (numeric থেকে সরাসরি)
+  const formatTaka = (amount: number) => {
+    if (amount === undefined || amount === null) return "0";
+    return amount.toLocaleString('en-IN');
   };
 
   const prefix = selectedPeriod === 'TODAY' ? 'আজকের' : selectedPeriod === 'WEEK' ? 'সাপ্তাহিক' : 'এই মাসের';
@@ -182,7 +231,7 @@ export default function DashboardPage({ onNavigate, currentMode, modeConfig }: D
       {/* ============================================================== */}
       <main ref={mainRef} className="flex-1 min-h-0 overflow-y-auto w-full max-w-7xl mx-auto p-2.5 flex flex-col gap-2.5 pb-28 scrollbar-hide">
         
-               {/* ২. সামারি সেকশন */}
+        {/* ২. সামারি সেকশন */}
         <div className="bg-white rounded-[18px] border border-[#D1E7DD] p-2 shadow-[0_8px_22px_-10px_rgba(11,92,71,0.4)] shrink-0">
           
           {/* দৈনিক / সাপ্তাহিক / মাসিক টগল */}
@@ -218,19 +267,19 @@ export default function DashboardPage({ onNavigate, currentMode, modeConfig }: D
             </div>
           </div>
 
-          {/* বিক্রি, খরচ ও বাকি বক্স (উপরের ৩টি কার্ড বাদ দেওয়া হয়েছে) */}
+          {/* বিক্রি, খরচ ও বাকি বক্স */}
           <div className="flex w-full gap-1.5">
             <div className="flex-1 bg-gradient-to-b from-[#F1FAF3] to-white border border-[#CDE8D4] rounded-xl p-1.5 flex flex-col items-center justify-center shadow-sm">
               <span className="text-[10px] text-[#334155] font-bold mb-0.5 whitespace-nowrap">{prefix} বিক্রি</span>
               <span className="text-[13px] font-black text-[#1B5E20] whitespace-nowrap">
-                ৳ {toBangla(selectedPeriod === 'TODAY' ? "8,500" : selectedPeriod === 'WEEK' ? "45,000" : "2,45,000")}
+                ৳ {toBangla(isDataLoading ? "..." : formatTaka(dashboardStats?.sales || 0))}
               </span>
             </div>
 
             <div className="flex-1 bg-gradient-to-b from-[#FEF3F2] to-white border border-[#F6CFCB] rounded-xl p-1.5 flex flex-col items-center justify-center shadow-sm">
               <span className="text-[10px] text-[#334155] font-bold mb-0.5 whitespace-nowrap">{prefix} খরচ</span>
               <span className="text-[13px] font-black text-[#DC2626] whitespace-nowrap">
-                ৳ {toBangla(selectedPeriod === 'TODAY' ? "1,200" : selectedPeriod === 'WEEK' ? "6,500" : "34,500")}
+                ৳ {toBangla(isDataLoading ? "..." : formatTaka(dashboardStats?.expense || 0))}
               </span>
             </div>
 
@@ -238,10 +287,10 @@ export default function DashboardPage({ onNavigate, currentMode, modeConfig }: D
               <span className="text-[10px] text-[#334155] font-bold mb-1 whitespace-nowrap text-center w-full">{prefix} বাকি</span>
               <div className="flex flex-row w-full gap-1">
                 <div className="flex-1 bg-[#D5EFDB] text-[#15803D] font-bold text-[9px] py-0.5 rounded-md text-center whitespace-nowrap ring-1 ring-[#B4DFBF]">
-                  দিয়েছে: {toBangla(0)}
+                  দেয়েছি: {toBangla(isDataLoading ? "..." : formatTaka(dashboardStats?.due_received || 0))}
                 </div>
                 <div className="flex-1 bg-[#FDDCDC] text-[#B91C1C] font-bold text-[9px] py-0.5 rounded-md text-center whitespace-nowrap ring-1 ring-[#F6BDBD]">
-                  নিয়েছে: {toBangla(0)}
+                  নিয়েছি: {toBangla(isDataLoading ? "..." : formatTaka(dashboardStats?.due_given || 0))}
                 </div>
               </div>
             </div>

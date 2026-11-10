@@ -17,7 +17,6 @@ import CalculatorPage from './pages/CalculatorPage';
 import TransactionDetailsPage from './pages/TransactionDetailsPage';
 import NewExpensePage from './pages/NewExpensePage';
 import ExpenseHistoryPage from './pages/ExpenseHistoryPage';
-import DueHistoryPage from './pages/DueHistoryPage';
 import AuthPage from './pages/AuthPage';
 import SetupBusinessPage from './pages/SetupBusinessPage';
 
@@ -28,7 +27,7 @@ export type ScreenKey =
   | 'dashboard' | 'purchase' | 'sale'
   | 'purchase_khata' | 'sale_khata' | 'due_khata' | 'expense_khata'
   | 'purchase_details' | 'sale_details' 
-  | 'new_expense' | 'expense_history' | 'due_history'
+  | 'new_expense' | 'expense_history'
   | 'contacts' | 'product_list' | 'stock' | 'reports'
   | 'depot' | 'sr' | 'market' | 'company'
   | 'cashbox' | 'partners' | 'marketing' | 'app_access'
@@ -57,6 +56,7 @@ function AppContent() {
   const [showExitModal, setShowExitModal] = useState<boolean>(false);
   const [currentMode, setCurrentMode] = useState<BusinessMode>('general');
   const [modeConfig, setModeConfig] = useState<ModeConfig>(defaultModeConfig);
+  const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
 
   const historyStackRef = useRef<ScreenKey[]>(['dashboard']);
   const currentScreenRef = useRef<ScreenKey>('dashboard');
@@ -78,8 +78,9 @@ function AppContent() {
     };
   }, []);
 
-  const navigateTo = (screen: string) => {
+  const navigateTo = (screen: string, id?: string) => {
     if (screen === currentScreen) return;
+    if (id) setSelectedTransactionId(id);
     historyStackRef.current.push(screen as ScreenKey);
     setCurrentScreen(screen as ScreenKey);
   };
@@ -176,10 +177,9 @@ function AppContent() {
 
     if (currentScreen === 'new_expense') return <NewExpensePage onBack={goBack} />;
     if (currentScreen === 'expense_history') return <ExpenseHistoryPage onBack={goBack} />;
-    if (currentScreen === 'due_history') return <DueHistoryPage onBack={goBack} />;
 
-    if (currentScreen === 'purchase_details') return <TransactionDetailsPage onBack={goBack} type="purchase" />;
-    if (currentScreen === 'sale_details') return <TransactionDetailsPage onBack={goBack} type="sale" />;
+    if (currentScreen === 'purchase_details') return <TransactionDetailsPage onBack={goBack} type="purchase" transactionId={selectedTransactionId} />;
+    if (currentScreen === 'sale_details') return <TransactionDetailsPage onBack={goBack} type="sale" transactionId={selectedTransactionId} />;
 
     if (currentScreen === 'contacts') return <ContactsPage onBack={goBack} />;
     if (currentScreen === 'product_list') return <ProductListPage onBack={goBack} />;

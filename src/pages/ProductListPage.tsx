@@ -1,18 +1,19 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   ArrowLeft, FileText, HelpCircle, Search, ScanBarcode, 
   Plus, X, Trash2, Edit2, Tag, Building2, 
-  Layers, Package, Loader2
+  Layers, Package, Loader2, Image as ImageIcon
 } from 'lucide-react';
 import { toBangla } from '../lib/utils';
 import { supabase } from '../lib/supabase';
-import { useAuth } from '../context/AuthContext'; // AuthContext ইমপোর্ট
+import { useAuth } from '../context/AuthContext';
+import { useAppContext } from '../context/AppContext';
+import { demoProducts, demoCategories, demoCompanies } from '../lib/demoData';
 
 interface Props {
   onBack: () => void;
 }
 
-// ডাটাবেসের কলাম অনুযায়ী ইন্টারফেস
 interface Category { id: string; name: string; }
 interface Company { id: string; name: string; }
 interface Product {
@@ -24,13 +25,13 @@ interface Product {
   purchase_price: number;
   stock_quantity: number;
   description: string;
+  image_url: string;
 }
 
 export default function ProductListPage({ onBack }: Props) {
-  // গ্লোবাল স্টেট থেকে আসল বিজনেস আইডি নেওয়া হচ্ছে
-  const { business } = useAuth();
+  const { activeBusiness } = useAuth();
+  const { isDemoMode } = useAppContext();
 
-  // ১. স্টেট ম্যানেজমেন্ট
   const [categories, setCategories] = useState<Category[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -42,43 +43,60 @@ export default function ProductListPage({ onBack }: Props) {
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string | 'all'>('all');
   const [selectedCompanyFilter, setSelectedCompanyFilter] = useState<string | 'all'>('all');
   
-  // মডাল স্টেট
   const [modalType, setModalType] = useState<'none' | 'add_product' | 'master_data'>('none');
   const [masterTab, setMasterTab] = useState<'category' | 'company'>('category');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
 
-  // নতুন ক্যাটাগরি/কোম্পানি ইনপুট স্টেট
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCompanyName, setNewCompanyName] = useState('');
 
-  // প্রোডাক্ট ফর্ম স্টেট
   const [formData, setFormData] = useState({
-    name: '', category_id: '', company_id: '', sale_price: '', purchase_price: '', stock_quantity: '', description: ''
+    name: '', category_id: '', company_id: '', sale_price: '', purchase_price: '', stock_quantity: '', description: '', image_url: ''
   });
+  
+  const [productImage, setProductImage] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ==========================================
-  // ২. ডাটাবেস থেকে ডাটা লোড করা (বিজনেস আইডি অনুযায়ী)
-  // ==========================================
   const fetchData = async () => {
-    if (!business?.id) return; // বিজনেস না থাকলে ডাটা লোড হবে না
-
     setIsLoading(true);
     try {
-      const [catRes, compRes, prodRes] = await Promise.all([
-        supabase.from('categories').select('*').eq('business_id', business.id).order('created_at', { ascending: false }),
-        supabase.from('companies').select('*').eq('business_id', business.id).order('created_at', { ascending: false }),
-        supabase.from('products').select('*').eq('business_id', business.id).order('created_at', { ascending: false })
-      ]);
+      if (isDemoMode) {
+        const mappedCats = demoCategories.map(c => ({ id: c.name, name: c.name }));
+        const mappedComps = demoCompanies.map(c => ({ id: c.name, name: c.name }));
+        const mappedProds = demoProducts.map(p => ({
+          id: p.id.toString(),
+          name: p.name,
+          category_id: p.category,
+          company_id: p.company,
+          sale_price: p.salePrice,
+          purchase_price: p.purchasePrice,
+          stock_quantity: p.stock,
+          description: '',
+          image_url: p.image_url || ''
+        }));
+        setCategories(mappedCats);
+        setCompanies(mappedComps);
+        setProducts(mappedProds);
+      } else {
+        if (!activeBusiness?.id) return; 
+        const bizId = activeBusiness.id;
 
-      if (catRes.error) throw catRes.error;
-      if (compRes.error) throw compRes.error;
-      if (prodRes.error) throw prodRes.error;
+        const [catRes, compRes, prodRes] = await Promise.all([
+          supabase.from('categories').select('*').eq('business_id', bizId).order('created_at', { ascending: false }),
+          supabase.from('companies').select('*').eq('business_id', bizId).order('created_at', { ascending: false }),
+          supabase.from('products').select('*').eq('business_id', bizId).order('created_at', { ascending: false })
+        ]);
 
-      setCategories(catRes.data || []);
-      setCompanies(compRes.data || []);
-      setProducts(prodRes.data || []);
+        if (catRes.error) throw catRes.error;
+        if (compRes.error) throw compRes.error;
+        if (prodRes.error) throw prodRes.error;
+
+        setCategories(catRes.data || []);
+        setCompanies(compRes.data || []);
+        setProducts(prodRes.data || []);
+      }
     } catch (error: any) {
-      console.error("ডাটা লোড এরর:", error.message);
+      console.error("Data load error:", error.message);
       alert('ডাটা লোড করতে সমস্যা হয়েছে। ইন্টারনেট কানেকশন চেক করুন।');
     } finally {
       setIsLoading(false);
@@ -87,9 +105,8 @@ export default function ProductListPage({ onBack }: Props) {
 
   useEffect(() => {
     fetchData();
-  }, [business?.id]); // বিজনেস আইডি পরিবর্তন হলে ডাটা রিফ্রেশ হবে
+  }, [activeBusiness?.id, isDemoMode]);
 
-  // ৩. ফিল্টার লজিক
   const filteredProducts = useMemo(() => {
     return products.filter(prod => {
       const matchSearch = prod.name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -99,24 +116,24 @@ export default function ProductListPage({ onBack }: Props) {
     });
   }, [products, searchQuery, selectedCategoryFilter, selectedCompanyFilter]);
 
-  // ==========================================
-  // ৪. ক্যাটাগরি ও কোম্পানি ম্যানেজমেন্ট (বাস্তব আইডি)
-  // ==========================================
   const handleAddCategory = async () => {
     if (!newCategoryName.trim()) return alert('ক্যাটাগরির নাম লিখুন');
     if (categories.some(c => c.name === newCategoryName.trim())) return alert('এই ক্যাটাগরি আগে থেকেই আছে');
-    if (!business?.id) return alert('ব্যবসা লোড হয়নি');
     
     setIsSaving(true);
     try {
-      const { error } = await supabase.from('categories').insert([{ 
-        name: newCategoryName.trim(),
-        business_id: business.id // আসল বিজনেস আইডি
-      }]);
-      if (error) throw error;
-      
+      if (isDemoMode) {
+        setCategories([...categories, { id: newCategoryName.trim(), name: newCategoryName.trim() }]);
+      } else {
+        if (!activeBusiness?.id) return alert('ব্যবসা লোড হয়নি');
+        const { error } = await supabase.from('categories').insert([{ 
+          name: newCategoryName.trim(),
+          business_id: activeBusiness.id
+        }]);
+        if (error) throw error;
+        fetchData();
+      }
       setNewCategoryName('');
-      fetchData();
     } catch (error: any) {
       alert('ক্যাটাগরি সেভ করতে সমস্যা: ' + error.message);
     } finally {
@@ -131,11 +148,14 @@ export default function ProductListPage({ onBack }: Props) {
     if (window.confirm('আপনি কি এই ক্যাটাগরি মুছে ফেলতে চান?')) {
       setIsSaving(true);
       try {
-        const { error } = await supabase.from('categories').delete().eq('id', id);
-        if (error) throw error;
-        
+        if (isDemoMode) {
+          setCategories(categories.filter(c => c.id !== id));
+        } else {
+          const { error } = await supabase.from('categories').delete().eq('id', id);
+          if (error) throw error;
+          fetchData();
+        }
         if (selectedCategoryFilter === id) setSelectedCategoryFilter('all');
-        fetchData();
       } catch (error: any) {
         alert('ডিলিট করতে সমস্যা: ' + error.message);
       } finally {
@@ -147,18 +167,21 @@ export default function ProductListPage({ onBack }: Props) {
   const handleAddCompany = async () => {
     if (!newCompanyName.trim()) return alert('কোম্পানির নাম লিখুন');
     if (companies.some(c => c.name === newCompanyName.trim())) return alert('এই কোম্পানি আগে থেকেই আছে');
-    if (!business?.id) return alert('ব্যবসা লোড হয়নি');
     
     setIsSaving(true);
     try {
-      const { error } = await supabase.from('companies').insert([{ 
-        name: newCompanyName.trim(),
-        business_id: business.id // আসল বিজনেস আইডি
-      }]);
-      if (error) throw error;
-      
+      if (isDemoMode) {
+        setCompanies([...companies, { id: newCompanyName.trim(), name: newCompanyName.trim() }]);
+      } else {
+        if (!activeBusiness?.id) return alert('ব্যবসা লোড হয়নি');
+        const { error } = await supabase.from('companies').insert([{ 
+          name: newCompanyName.trim(),
+          business_id: activeBusiness.id
+        }]);
+        if (error) throw error;
+        fetchData();
+      }
       setNewCompanyName('');
-      fetchData();
     } catch (error: any) {
       alert('কোম্পানি সেভ করতে সমস্যা: ' + error.message);
     } finally {
@@ -173,11 +196,14 @@ export default function ProductListPage({ onBack }: Props) {
     if (window.confirm('আপনি কি এই কোম্পানি মুছে ফেলতে চান?')) {
       setIsSaving(true);
       try {
-        const { error } = await supabase.from('companies').delete().eq('id', id);
-        if (error) throw error;
-        
+        if (isDemoMode) {
+          setCompanies(companies.filter(c => c.id !== id));
+        } else {
+          const { error } = await supabase.from('companies').delete().eq('id', id);
+          if (error) throw error;
+          fetchData();
+        }
         if (selectedCompanyFilter === id) setSelectedCompanyFilter('all');
-        fetchData();
       } catch (error: any) {
         alert('ডিলিট করতে সমস্যা: ' + error.message);
       } finally {
@@ -186,11 +212,9 @@ export default function ProductListPage({ onBack }: Props) {
     }
   };
 
-  // ==========================================
-  // ৫. প্রোডাক্ট ম্যানেজমেন্ট
-  // ==========================================
   const handleOpenAddProduct = () => {
     setSelectedProduct(null);
+    setProductImage(null);
     setFormData({ 
       name: '', 
       category_id: categories[0]?.id || '', 
@@ -198,13 +222,15 @@ export default function ProductListPage({ onBack }: Props) {
       sale_price: '', 
       purchase_price: '', 
       stock_quantity: '', 
-      description: '' 
+      description: '',
+      image_url: ''
     });
     setModalType('add_product');
   };
 
   const handleOpenEditProduct = (prod: Product) => {
     setSelectedProduct(prod);
+    setProductImage(null);
     setFormData({
       name: prod.name,
       category_id: prod.category_id || '',
@@ -212,7 +238,8 @@ export default function ProductListPage({ onBack }: Props) {
       sale_price: prod.sale_price.toString(),
       purchase_price: prod.purchase_price.toString(),
       stock_quantity: prod.stock_quantity.toString(),
-      description: prod.description || ''
+      description: prod.description || '',
+      image_url: prod.image_url || ''
     });
     setModalType('add_product');
   };
@@ -221,33 +248,52 @@ export default function ProductListPage({ onBack }: Props) {
     if (!formData.name || !formData.category_id || !formData.company_id || !formData.sale_price) {
       return alert('পণ্যের নাম, ক্যাটাগরি, কোম্পানি এবং বিক্রয় মূল্য আবশ্যক');
     }
-    if (!business?.id) return alert('ব্যবসা লোড হয়নি');
     
     setIsSaving(true);
     try {
+      let uploadedImageUrl = formData.image_url;
+
+      if (productImage && !isDemoMode && activeBusiness?.id) {
+        const fileExt = productImage.name.split('.').pop();
+        const fileName = `prod-${activeBusiness.id}-${Date.now()}.${fileExt}`;
+        const { error: uploadError } = await supabase.storage.from('avatars').upload(fileName, productImage);
+        if (uploadError) throw uploadError;
+        const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(fileName);
+        uploadedImageUrl = urlData.publicUrl;
+      }
+
       const productData = {
-        business_id: business.id, // আসল বিজনেস আইডি
         name: formData.name,
         category_id: formData.category_id,
         company_id: formData.company_id,
         sale_price: Number(formData.sale_price) || 0,
         purchase_price: Number(formData.purchase_price) || 0,
         stock_quantity: Number(formData.stock_quantity) || 0,
-        description: formData.description
+        description: formData.description,
+        image_url: uploadedImageUrl
       };
 
-      if (selectedProduct) {
-        // এডিট
-        const { error } = await supabase.from('products').update(productData).eq('id', selectedProduct.id);
-        if (error) throw error;
+      if (isDemoMode) {
+        if (selectedProduct) {
+          setProducts(products.map(p => p.id === selectedProduct.id ? { ...p, ...productData } : p));
+        } else {
+          setProducts([{ id: Date.now().toString(), ...productData }, ...products]);
+        }
       } else {
-        // নতুন অ্যাড
-        const { error } = await supabase.from('products').insert([productData]);
-        if (error) throw error;
+        if (!activeBusiness?.id) return alert('ব্যবসা লোড হয়নি');
+        const dbProductData = { ...productData, business_id: activeBusiness.id };
+
+        if (selectedProduct) {
+          const { error } = await supabase.from('products').update(dbProductData).eq('id', selectedProduct.id);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase.from('products').insert([dbProductData]);
+          if (error) throw error;
+        }
+        fetchData();
       }
 
       setModalType('none');
-      fetchData();
     } catch (error: any) {
       alert('প্রোডাক্ট সেভ করতে সমস্যা: ' + error.message);
     } finally {
@@ -259,11 +305,14 @@ export default function ProductListPage({ onBack }: Props) {
     if (window.confirm('আপনি কি সত্যিই এই পণ্যটি মুছে ফেলতে চান?')) {
       setIsSaving(true);
       try {
-        const { error } = await supabase.from('products').delete().eq('id', id);
-        if (error) throw error;
-        
+        if (isDemoMode) {
+          setProducts(products.filter(p => p.id !== id));
+        } else {
+          const { error } = await supabase.from('products').delete().eq('id', id);
+          if (error) throw error;
+          fetchData();
+        }
         setSelectedProduct(null);
-        fetchData();
       } catch (error: any) {
         alert('ডিলিট করতে সমস্যা: ' + error.message);
       } finally {
@@ -275,7 +324,6 @@ export default function ProductListPage({ onBack }: Props) {
   return (
     <div className="h-[100dvh] bg-[#EFF6F3] text-[#0F2A3D] font-serif flex flex-col overflow-hidden w-full relative">
       
-      {/* হেডার */}
       <header className="bg-gradient-to-r from-[#0B5C47] to-[#062D5E] text-white shadow-md shrink-0 z-40">
         <div className="px-3 py-2.5 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -291,7 +339,6 @@ export default function ProductListPage({ onBack }: Props) {
 
       <main className="flex-1 overflow-y-auto p-2.5 flex flex-col gap-3 pb-24">
         
-        {/* সার্চ ও অ্যাড বাটন */}
         <div className="flex flex-col gap-2 shrink-0">
           <div className="flex gap-2">
             <div className="flex-1 bg-white border border-gray-300 rounded-xl px-3 py-2 flex items-center gap-2 shadow-sm focus-within:border-[#0B5C47]">
@@ -301,9 +348,7 @@ export default function ProductListPage({ onBack }: Props) {
             <button className="bg-white border border-gray-300 rounded-xl px-2.5 shadow-sm text-[#1E88E5]"><ScanBarcode size={22}/></button>
           </div>
           
-          {/* ক্যাটাগরি ও কোম্পানি ফিল্টার ট্যাব */}
           <div className="flex flex-col gap-1.5">
-            {/* ক্যাটাগরি */}
             <div className="flex gap-1.5 overflow-x-auto scrollbar-hide py-0.5">
               <button 
                 onClick={() => setSelectedCategoryFilter('all')}
@@ -322,7 +367,6 @@ export default function ProductListPage({ onBack }: Props) {
               ))}
             </div>
 
-            {/* কোম্পানি */}
             <div className="flex gap-1.5 overflow-x-auto scrollbar-hide py-0.5">
               <button 
                 onClick={() => setSelectedCompanyFilter('all')}
@@ -343,7 +387,6 @@ export default function ProductListPage({ onBack }: Props) {
           </div>
         </div>
 
-        {/* টোটাল ও ক্যাটাগরি ম্যানেজ বাটন */}
         <div className="flex justify-between items-center shrink-0 mt-1">
           <div className="font-bold text-sm text-gray-700">মোট পণ্য: {toBangla(filteredProducts.length)}</div>
           <button onClick={() => setModalType('master_data')} className="flex items-center gap-1 text-xs font-bold text-[#0B5C47] bg-[#E8F5E9] px-2 py-1 rounded-lg border border-[#A5D6A7] active:scale-95 transition">
@@ -351,7 +394,6 @@ export default function ProductListPage({ onBack }: Props) {
           </button>
         </div>
 
-        {/* প্রোডাক্ট লিস্ট */}
         {isLoading ? (
           <div className="flex-1 flex flex-col items-center justify-center mt-10">
             <Loader2 size={40} className="text-[#1E88E5] animate-spin mb-4" />
@@ -371,8 +413,12 @@ export default function ProductListPage({ onBack }: Props) {
                 return (
                   <div key={prod.id} onClick={() => setSelectedProduct(prod)} className="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform">
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-10 h-10 bg-amber-50 rounded-lg flex items-center justify-center text-amber-500 shrink-0 border border-amber-100">
-                        <Package size={20} />
+                      <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400 shrink-0 border overflow-hidden">
+                        {prod.image_url ? (
+                          <img src={prod.image_url} alt={prod.name} className="w-full h-full object-cover" />
+                        ) : (
+                          <Package size={20} />
+                        )}
                       </div>
                       <div className="min-w-0">
                         <h3 className="font-bold text-sm text-gray-800 truncate">{prod.name}</h3>
@@ -394,14 +440,12 @@ export default function ProductListPage({ onBack }: Props) {
         )}
       </main>
 
-      {/* বটম বাটন */}
       <div className="fixed bottom-0 left-0 w-full bg-white border-t border-gray-200 p-2.5 z-50">
         <button onClick={handleOpenAddProduct} className="w-full bg-[#1E88E5] text-white py-3 rounded-xl font-bold shadow-md flex justify-center items-center gap-2 active:scale-95 transition">
           <Plus size={18}/> নতুন প্রোডাক্ট যুক্ত করুন
         </button>
       </div>
 
-      {/* ================= মডাল ১: ক্যাটাগরি ও কোম্পানি ম্যানেজমেন্ট ================= */}
       {modalType === 'master_data' && (
         <div className="fixed inset-0 bg-black/50 z-[100] flex justify-center items-end sm:items-center backdrop-blur-sm">
           <div className="bg-white w-full h-[85dvh] sm:h-auto sm:max-h-[85vh] sm:max-w-md sm:rounded-2xl rounded-t-2xl overflow-hidden flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-300">
@@ -458,7 +502,6 @@ export default function ProductListPage({ onBack }: Props) {
         </div>
       )}
 
-      {/* ================= মডাল ২: প্রোডাক্ট অ্যাড/এডিট ================= */}
       {modalType === 'add_product' && (
         <div className="fixed inset-0 bg-black/50 z-[100] flex justify-center items-end sm:items-center backdrop-blur-sm">
           <div className="bg-[#EFF6F3] w-full h-[90dvh] sm:h-auto sm:max-h-[90vh] sm:max-w-md sm:rounded-2xl rounded-t-2xl overflow-hidden flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-300">
@@ -468,6 +511,21 @@ export default function ProductListPage({ onBack }: Props) {
             </div>
             
             <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
+              <div className="flex flex-col items-center mb-2">
+                <div onClick={() => fileInputRef.current?.click()} className="relative w-24 h-24 bg-gray-100 rounded-xl border-2 border-dashed border-gray-400 flex items-center justify-center overflow-hidden cursor-pointer hover:bg-gray-200 transition">
+                  {productImage ? (
+                    <img src={URL.createObjectURL(productImage)} alt="Preview" className="w-full h-full object-cover" />
+                  ) : formData.image_url ? (
+                    <img src={formData.image_url} alt="Current" className="w-full h-full object-cover" />
+                  ) : (
+                    <ImageIcon size={30} className="text-gray-400" />
+                  )}
+                  <div className="absolute bottom-0 inset-x-0 bg-black/60 py-1 flex justify-center text-white"><Plus size={14} /></div>
+                </div>
+                <input type="file" ref={fileInputRef} onChange={(e) => setProductImage(e.target.files?.[0] || null)} accept="image/*" className="hidden" />
+                <p className="text-[10px] text-gray-500 font-bold mt-1">ছবি যুক্ত করুন</p>
+              </div>
+
               <div>
                 <label className="text-xs font-bold text-gray-600 mb-1 block">পণ্যের নাম <span className="text-red-500">*</span></label>
                 <input type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="পণ্যের নাম" className="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-[#0B5C47]" />
@@ -532,7 +590,6 @@ export default function ProductListPage({ onBack }: Props) {
         </div>
       )}
 
-      {/* ================= মডাল ৩: প্রোডাক্ট ডিটেইলস ================= */}
       {selectedProduct && modalType === 'none' && (
         <div className="fixed inset-0 bg-black/50 z-[100] flex justify-center items-end sm:items-center backdrop-blur-sm">
           <div className="bg-[#EFF6F3] w-full h-[80dvh] sm:h-auto sm:max-h-[85vh] sm:max-w-md sm:rounded-2xl rounded-t-2xl overflow-hidden flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-300">
@@ -543,8 +600,12 @@ export default function ProductListPage({ onBack }: Props) {
             
             <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
               <div className="flex gap-3 items-start">
-                <div className="w-16 h-16 bg-white rounded-xl shadow-sm border flex items-center justify-center shrink-0">
-                  <Package size={32} className="text-amber-500" />
+                <div className="w-16 h-16 bg-white rounded-xl shadow-sm border flex items-center justify-center shrink-0 overflow-hidden">
+                  {selectedProduct.image_url ? (
+                    <img src={selectedProduct.image_url} alt={selectedProduct.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <Package size={32} className="text-amber-500" />
+                  )}
                 </div>
                 <div className="flex-1">
                   <h3 className="font-bold text-base text-gray-800">{selectedProduct.name}</h3>

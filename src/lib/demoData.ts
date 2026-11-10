@@ -67,3 +67,42 @@ export const demoDashboardStats = {
     unread_inbox: 12
   },
 };
+
+export const demoExpenses = [
+  { id: '1', reason: 'দোকান ভাড়া', amount: 5000, date: '10 Nov 2026', rawDate: new Date('2026-11-10').getTime(), note: 'নভেম্বর মাসের ভাড়া' },
+  { id: '2', reason: 'বিদ্যুৎ বিল', amount: 1200, date: '09 Nov 2026', rawDate: new Date('2026-11-09').getTime(), note: 'অক্টোবর মাসের বিল' },
+  { id: '3', reason: 'কর্মচারী বেতন', amount: 15000, date: '05 Nov 2026', rawDate: new Date('2026-11-05').getTime(), note: '' }
+];
+
+export const demoSuppliers = [
+  { id: 's1', name: 'মোল্লা পোল্ট্রি', phone: '01811223344', address: 'সাভার' },
+  { id: 's2', name: 'ভাই ভাই এগ্রো', phone: '01711223344', address: 'গাজীপুর' }
+];
+
+export const demoEmployees = [
+  { id: 'e1', name: 'রফিকুল ইসলাম', phone: '01911223344' }
+];
+
+export const demoReportRawData = {
+  sales: [
+    { id: '1', total_amount: 50000, due_amount: 5000, sale_date: new Date().toISOString(), customer_id: 'c1', customers: { name: 'রহিম স্টোর' } },
+    { id: '2', total_amount: 30000, due_amount: 0, sale_date: new Date().toISOString(), customer_id: 'c2', customers: { name: 'করিম এন্টারপ্রাইজ' } }
+  ],
+  purchases: [
+    { id: '1', total_amount: 40000, due_amount: 2000, purchase_date: new Date().toISOString(), challan_no: 'CH-001' }
+  ],
+  expenses: [
+    { id: '1', amount: 1200, reason: 'দোকান ভাড়া', date: new Date().toISOString(), note: 'নভেম্বর মাস' },
+    { id: '2', amount: 800, reason: 'বিদ্যুৎ বিল', date: new Date().toISOString(), note: '' }
+  ],
+  products: [
+    { id: 'p1', name: 'গ্রোয়ার ফিড', stock_quantity: 50, purchase_price: 1900, sale_price: 2050, categories: { name: 'মাছের খাদ্য' }, companies: { name: 'নিউজা' } },
+    { id: 'p2', name: 'ক্যালসিয়াম', stock_quantity: 100, purchase_price: 280, sale_price: 350, categories: { name: 'ঔষধ' }, companies: { name: 'স্কয়ার' } }
+  ],
+  customers: [
+    { id: 'c1', name: 'রহিম স্টোর', due_balance: 15000, phone: '01711000001' }
+  ],
+  suppliers: [
+    { id: 's1', name: 'ভাই ভাই এগ্রো', due_balance: 5000, phone: '01811000001' }
+  ]
+};

@@ -107,7 +107,11 @@ function AppContent() {
         if (currentScreenRef.current === 'dashboard') {
           setShowExitModal(true);
         } else {
-          goBack();
+          const event = new CustomEvent('appBack', { cancelable: true });
+          const notPrevented = window.dispatchEvent(event);
+          if (notPrevented) {
+            goBack();
+          }
         }
       }, 0);
     };
@@ -167,8 +171,8 @@ function AppContent() {
     }
     if (currentScreen === 'calculator') return <CalculatorPage onBack={goBack} />;
 
-    if (currentScreen === 'purchase') return <PurchasePage onBack={goBack} />;
-    if (currentScreen === 'sale') return <SalePage onBack={goBack} />;
+    if (currentScreen === 'purchase') return <PurchasePage onBack={goBack} onNavigate={navigateTo} />;
+    if (currentScreen === 'sale') return <SalePage onBack={goBack} onNavigate={navigateTo} />;
 
     if (currentScreen === 'purchase_khata') return <PurchaseKhataPage onBack={goBack} onNavigate={navigateTo} />;
     if (currentScreen === 'sale_khata') return <SaleKhataPage onBack={goBack} onNavigate={navigateTo} />;

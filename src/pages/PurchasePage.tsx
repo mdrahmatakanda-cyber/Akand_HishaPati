@@ -2,9 +2,10 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   ArrowLeft, Search, ShoppingBag, CheckCircle2, 
   Printer, Share2, CreditCard, Banknote, Building2, Smartphone,
-  Trash2, Plus, ChevronRight, Image as ImageIcon, ScanBarcode, X, Tag, Loader2, UserPlus, Truck
+  Trash2, ChevronRight, Image as ImageIcon, ScanBarcode, X, Tag, Loader2, UserPlus, Truck, Filter, ZoomIn, Check, AlertTriangle, Plus
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
+import html2canvas from 'html2canvas';
 import { toBangla } from '../lib/utils';
 import { useAppContext } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
@@ -13,9 +14,10 @@ import { demoProducts, demoDealers } from '../lib/demoData';
 
 interface PurchaseProps {
   onBack: () => void;
+  onNavigate: (screen: string) => void;
 }
 
-export default function PurchasePage({ onBack }: PurchaseProps) {
+export default function PurchasePage({ onBack, onNavigate }: PurchaseProps) {
   const { isDemoMode } = useAppContext();
   const { activeBusiness } = useAuth();
 
@@ -27,11 +29,18 @@ export default function PurchasePage({ onBack }: PurchaseProps) {
   const [products, setProducts] = useState<any[]>([]);
   const [suppliers, setSuppliers] = useState<any[]>([]);
   
+  // Filter & Search States
   const [searchQuery, setSearchQuery] = useState('');
-  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [selectedCompany, setSelectedCompany] = useState('All');
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+  const [categoryUsage, setCategoryUsage] = useState<Record<string, number>>({});
+  const [companyUsage, setCompanyUsage] = useState<Record<string, number>>({});
+  
+  // Image Preview State
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
-  const [batch, setBatch] = useState('');
-  const [challan, setChallan] = useState('');
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
   
   const [hasDiscount, setHasDiscount] = useState(false);
   const [discountAmount, setDiscountAmount] = useState('');
@@ -46,13 +55,23 @@ export default function PurchasePage({ onBack }: PurchaseProps) {
   const [receiptId, setReceiptId] = useState('');
   
   const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
+  const [isSupplierSearchOpen, setIsSupplierSearchOpen] = useState(false);
+  const [supplierSearchQuery, setSupplierSearchQuery] = useState('');
   const [newSupplier, setNewSupplier] = useState({ name: '', phone: '' });
+
+  const [toast, setToast] = useState<{ show: boolean, message: string, type: 'success' | 'error' }>({ show: false, message: '', type: 'success' });
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ show: true, message, type });
+    setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000);
+  };
   
   const [receiptImage, setReceiptImage] = useState<File | null>(null);
   const receiptInputRef = useRef<HTMLInputElement>(null);
 
   const [flyingItem, setFlyingItem] = useState<{ id: number, x: number, y: number } | null>(null);
 
+  // 🎥 স্ক্যানার লজিক
   useEffect(() => {
     let html5QrCode: Html5Qrcode | null = null;
     if (isScannerOpen) {
@@ -77,6 +96,7 @@ export default function PurchasePage({ onBack }: PurchaseProps) {
     };
   }, [isScannerOpen]);
 
+  // 📡 ডাটা ফেচিং
   const fetchData = async () => {
     const bizId = activeBusiness?.id;
     if (!isDemoMode && !bizId) return;
@@ -115,25 +135,50 @@ export default function PurchasePage({ onBack }: PurchaseProps) {
     fetchData();
   }, [isDemoMode, activeBusiness?.id]);
 
+  // 🔥 কুইক ফিল্টার (Top 3) লজিক
+  const allCategories = useMemo(() => Array.from(new Set(products.map(p => p.category).filter(Boolean))), [products]);
+  const allCompanies = useMemo(() => Array.from(new Set(products.map(p => p.company).filter(Boolean))), [products]);
+
+  const topThreeCategories = useMemo(() => {
+    return [...allCategories].sort((a, b) => (categoryUsage[b] || 0) - (categoryUsage[a] || 0)).slice(0, 3);
+  }, [categoryUsage, allCategories]);
+
+  const topThreeCompanies = useMemo(() => {
+    return [...allCompanies].sort((a, b) => (companyUsage[b] || 0) - (companyUsage[a] || 0)).slice(0, 3);
+  }, [companyUsage, allCompanies]);
+
+  const handleCategorySelect = (cat: string) => {
+    setSelectedCategory(cat);
+    if (cat !== 'All') setCategoryUsage(prev => ({ ...prev, [cat]: (prev[cat] || 0) + 1 }));
+  };
+
+  const handleCompanySelect = (comp: string) => {
+    setSelectedCompany(comp);
+    if (comp !== 'All') setCompanyUsage(prev => ({ ...prev, [comp]: (prev[comp] || 0) + 1 }));
+  };
+
+  // ফিল্টার করা প্রোডাক্ট লিস্ট
   const filteredProducts = useMemo(() => {
     return products.filter(prod => {
-      const matchSearch = prod.name.includes(searchQuery);
-      return matchSearch;
+      const matchSearch = prod.name.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchCategory = selectedCategory === 'All' || prod.category === selectedCategory;
+      const matchCompany = selectedCompany === 'All' || prod.company === selectedCompany;
+      return matchSearch && matchCategory && matchCompany;
     });
-  }, [searchQuery, products]);
+  }, [searchQuery, selectedCategory, selectedCompany, products]);
 
   const handleBarcodeScanned = (barcode: string) => {
     const scannedProduct = products.find(p => p.id.toString() === barcode) || products[0]; 
     if (scannedProduct) {
       addToCart(scannedProduct);
-      alert(`"${scannedProduct.name}" স্ক্যান হয়েছে এবং কার্টে যুক্ত হয়েছে!`);
+      alert(`"${scannedProduct.name}" স্ক্যান হয়েছে!`);
     }
   };
 
   const addToCart = (product: any, e?: React.MouseEvent) => {
     if (e) {
       const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-      setFlyingItem({ id: product.id, x: rect.left, y: rect.top });
+      setFlyingItem({ id: product.id, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
       setTimeout(() => setFlyingItem(null), 800);
     }
     const existing = cart.find(item => item.id === product.id);
@@ -145,16 +190,8 @@ export default function PurchasePage({ onBack }: PurchaseProps) {
   };
 
   const removeFromCart = (id: number) => setCart(cart.filter(item => item.id !== id));
-  
-  const updateQty = (id: number, newQty: number) => {
-    if (newQty < 1) return;
-    setCart(cart.map(item => item.id === id ? { ...item, qty: newQty } : item));
-  };
-
-  const updateRate = (id: number, newRate: number) => {
-    if (newRate < 0) return;
-    setCart(cart.map(item => item.id === id ? { ...item, rate: newRate } : item));
-  };
+  const updateQty = (id: number, newQty: number) => { if (newQty >= 1) setCart(cart.map(item => item.id === id ? { ...item, qty: newQty } : item)); };
+  const updateRate = (id: number, newRate: number) => { if (newRate >= 0) setCart(cart.map(item => item.id === id ? { ...item, rate: newRate } : item)); };
 
   const subTotal = cart.reduce((acc, item) => acc + (item.qty * item.rate), 0);
   const discountVal = hasDiscount ? (Number(discountAmount) || 0) : 0;
@@ -162,10 +199,51 @@ export default function PurchasePage({ onBack }: PurchaseProps) {
   const finalTotal = subTotal - discountVal + deliveryVal;
   const dueAmount = finalTotal - (Number(paidAmount) || 0);
 
+  const handleShareReceipt = async () => {
+    const receiptElement = document.getElementById('printable-receipt');
+    if (!receiptElement) return;
+    try {
+      const canvas = await html2canvas(receiptElement, { scale: 2, backgroundColor: '#ffffff' });
+      canvas.toBlob(async (blob) => {
+        if (!blob) return;
+        const file = new File([blob], 'receipt.png', { type: 'image/png' });
+        if (navigator.share && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: 'Purchase Receipt' });
+        } else {
+          alert('আপনার ব্রাউজারটি ইমেজ শেয়ার সাপোর্ট করে না।');
+        }
+      });
+    } catch (err) {
+      alert('শেয়ার করতে সমস্যা হয়েছে।');
+    }
+  };
+
   const handleBack = () => {
     if (step > 1) setStep(step - 1);
     else onBack();
   };
+
+  useEffect(() => {
+    const handleAppBack = (e: Event) => {
+      if (step > 1) {
+        e.preventDefault();
+        setStep(step - 1);
+      }
+    };
+    window.addEventListener('appBack', handleAppBack);
+    return () => window.removeEventListener('appBack', handleAppBack);
+  }, [step]);
+
+  useEffect(() => {
+    const handleAppBack = (e: Event) => {
+      if (step > 1) {
+        e.preventDefault();
+        setStep(step - 1);
+      }
+    };
+    window.addEventListener('appBack', handleAppBack);
+    return () => window.removeEventListener('appBack', handleAppBack);
+  }, [step]);
 
   const handleAddSupplier = async () => {
     if (!newSupplier.name) return alert('সাপ্লায়ারের নাম দিন');
@@ -196,8 +274,8 @@ export default function PurchasePage({ onBack }: PurchaseProps) {
 
   const handleConfirmPurchase = async () => {
     if (!isDemoMode) {
-      if (!activeBusiness?.id) return alert('বিজনেস সিলেক্ট করা নেই!');
-      if (!supplier) return alert('সাপ্লায়ার সিলেক্ট করুন!');
+      if (!activeBusiness?.id) return showToast('বিজনেস সিলেক্ট করা নেই!', 'error');
+      if (!supplier) return showToast('অনুগ্রহ করে একজন সাপ্লায়ার সিলেক্ট করুন!', 'error');
     }
     
     setIsSaving(true);
@@ -224,8 +302,8 @@ export default function PurchasePage({ onBack }: PurchaseProps) {
         const { data, error } = await supabase.rpc('create_purchase', {
           p_business_id: activeBusiness?.id,
           p_supplier_id: supplier,
-          p_challan_no: challan,
-          p_batch_no: batch,
+          p_challan_no: '',
+          p_batch_no: '',
           p_total_amount: finalTotal,
           p_discount: discountVal,
           p_delivery_charge: deliveryVal,
@@ -249,141 +327,204 @@ export default function PurchasePage({ onBack }: PurchaseProps) {
   };
 
   return (
-    <div className="h-[100dvh] bg-[#EFF6F3] text-[#0F2A3D] font-serif flex flex-col overflow-hidden w-full relative">
+    <div className="h-[100dvh] bg-da-bg text-da-textDark font-serif flex flex-col overflow-hidden w-full relative">
       
-      <header className="bg-gradient-to-r from-[#0B5C47] to-[#062D5E] text-white shadow-md shrink-0 z-40">
-        <div className="px-3 py-2.5 flex items-center gap-3">
-          <button onClick={handleBack} className="p-1.5 bg-white/10 rounded-lg hover:bg-white/20 transition cursor-pointer">
-            <ArrowLeft size={20} />
-          </button>
-          <h1 className="font-bold text-base">
-            {step === 1 && "ক্রয় - পণ্য নির্বাচন"}
-            {step === 2 && "ক্রয় - কার্ট"}
-            {step === 3 && "ক্রয় - পেমেন্ট"}
-            {step === 4 && "ক্রয় - রিসিপ্ট"}
-          </h1>
+      {toast.show && (
+        <div className={`fixed top-12 left-1/2 -translate-x-1/2 z-[999] w-[280px] px-5 py-5 rounded-2xl shadow-2xl flex flex-col items-center justify-center gap-3 animate-in slide-in-from-top-8 fade-in duration-300 border border-white/20 ${toast.type === 'success' ? 'bg-da-greenDeep' : 'bg-da-red'} text-white`}>
+          <div className="w-12 h-12 bg-white/15 rounded-full flex items-center justify-center shadow-inner">
+            {toast.type === 'success' ? <CheckCircle2 size={28} className="text-white" /> : <AlertTriangle size={28} className="text-white" />}
+          </div>
+          <span className="text-sm font-bold text-center leading-snug">{toast.message}</span>
+        </div>
+      )}
+
+      <header className="bg-gradient-to-r from-da-greenDeep to-da-blueDeep text-white shadow-md shrink-0 z-40">
+        <div className="px-3 py-2.5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button onClick={handleBack} className="p-1.5 bg-white/10 rounded-lg hover:bg-white/20 transition cursor-pointer">
+              <ArrowLeft size={20} />
+            </button>
+            <h1 className="font-bold text-base">
+              {step === 1 && "ক্রয় - পণ্য নির্বাচন"}
+              {step === 2 && "ক্রয় - কার্ট"}
+              {step === 3 && "ক্রয় - পেমেন্ট"}
+              {step === 4 && "ক্রয় - রিসিপ্ট"}
+            </h1>
+          </div>
+          {step === 1 && (
+            <button onClick={() => onNavigate('product_list')} className="flex items-center gap-1 bg-white/10 px-2.5 py-1.5 rounded-lg text-xs font-bold active:scale-95 transition hover:bg-white/20">
+              <Plus size={14} /> নতুন পণ্য
+            </button>
+          )}
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto p-2.5 flex flex-col gap-2.5 pb-24 scrollbar-hide">
+      <main className="flex-1 overflow-y-auto p-2 flex flex-col gap-1 pb-24 scrollbar-hide">
         
+        {/* ================= স্টেপ ১: প্রোডাক্ট লিস্ট ================= */}
         {step === 1 && (
           <>
-            <div className="flex gap-2 shrink-0">
-              <div className="flex-1 bg-white border border-gray-300 rounded-lg px-2.5 py-1.5 flex items-center gap-2 shadow-sm">
-                <Search size={16} className="text-gray-400" />
-                <input type="text" placeholder="পণ্য খোজ করুন" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full outline-none text-xs bg-transparent" />
+            {/* সার্চ ও ফিল্টার বার */}
+            <div className="flex gap-1.5 shrink-0">
+              <div className="flex-1 bg-white border border-da-cardBorder rounded-lg px-2.5 py-1.5 flex items-center gap-1.5 shadow-sm focus-within:border-da-blue transition">
+                <Search size={14} className="text-da-textMuted" />
+                <input type="text" placeholder="পণ্য খোজ করুন" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full outline-none text-xs bg-transparent placeholder-da-textMuted" />
+                <button onClick={() => setIsFilterModalOpen(true)} className="text-da-textMuted active:scale-90 transition p-0.5">
+                  <Filter size={16} />
+                </button>
               </div>
-              <button onClick={() => setIsScannerOpen(true)} className="bg-white border border-gray-300 rounded-lg px-2 shadow-sm text-[#1E88E5] active:scale-90 transition flex items-center justify-center">
-                <ScanBarcode size={22} />
+              <button onClick={() => setIsScannerOpen(true)} className="bg-white border border-da-cardBorder rounded-lg px-2.5 shadow-sm text-da-blue active:scale-90 transition flex items-center justify-center">
+                <ScanBarcode size={18} />
               </button>
             </div>
 
-            <div className="flex flex-col gap-2 mt-1">
-              {isDataLoading ? (
-                <div className="flex justify-center items-center mt-10"><Loader2 className="animate-spin text-[#0B5C47]" size={32}/></div>
-              ) : filteredProducts.length === 0 ? (
-                <div className="text-center text-gray-500 text-sm mt-5">কোনো পণ্য পাওয়া যায়নি</div>
-              ) : (
-                filteredProducts.map(prod => (
-                  <div key={prod.id} className="bg-white p-2 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-11 h-11 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400 shrink-0 overflow-hidden border border-gray-200">
-                        {prod.image_url ? (
+            {/* কুইক ফিল্টার: ক্যাটাগরি */}
+            <div className="flex gap-1 overflow-x-auto scrollbar-hide py-0.5 items-center shrink-0">
+              <button onClick={() => handleCategorySelect('All')} className={`px-2 py-1 rounded-md text-[10px] font-bold whitespace-nowrap transition border flex items-center gap-1 ${selectedCategory === 'All' ? 'bg-da-green text-white border-da-green shadow-sm' : 'bg-white text-da-textMuted border-da-cardBorder'}`}>
+                <Tag size={10}/> সব ক্যাটাগরি
+              </button>
+              {topThreeCategories.map(cat => (
+                <button key={cat} onClick={() => handleCategorySelect(cat)} className={`px-2 py-1 rounded-md text-[10px] font-bold whitespace-nowrap transition border ${selectedCategory === cat ? 'bg-da-green text-white border-da-green shadow-sm' : 'bg-white text-da-textMuted border-da-cardBorder'}`}>
+                  {cat}
+                </button>
+              ))}
+            </div>
+
+            {/* কুইক ফিল্টার: কোম্পানি */}
+            <div className="flex gap-1 overflow-x-auto scrollbar-hide py-0.5 items-center shrink-0">
+              <button onClick={() => handleCompanySelect('All')} className={`px-2 py-1 rounded-md text-[10px] font-bold whitespace-nowrap transition border flex items-center gap-1 ${selectedCompany === 'All' ? 'bg-da-blue text-white border-da-blue shadow-sm' : 'bg-white text-da-textMuted border-da-cardBorder'}`}>
+                <Building2 size={10}/> সব কোম্পানি
+              </button>
+              {topThreeCompanies.map(comp => (
+                <button key={comp} onClick={() => handleCompanySelect(comp)} className={`px-2 py-1 rounded-md text-[10px] font-bold whitespace-nowrap transition border ${selectedCompany === comp ? 'bg-da-blue text-white border-da-blue shadow-sm' : 'bg-white text-da-textMuted border-da-cardBorder'}`}>
+                  {comp}
+                </button>
+              ))}
+            </div>
+
+            {/* প্রোডাক্ট গ্রিড (২ কলাম) */}
+            {isDataLoading ? (
+              <div className="flex justify-center items-center mt-10"><Loader2 className="animate-spin text-da-green" size={32}/></div>
+            ) : filteredProducts.length === 0 ? (
+              <div className="text-center text-da-textMuted text-sm mt-10">কোনো পণ্য পাওয়া যায়নি</div>
+            ) : (
+              <div className="grid grid-cols-2 gap-1.5 mt-1">
+                {filteredProducts.map(prod => (
+                  <div 
+                    key={prod.id} 
+                    onClick={(e) => addToCart(prod, e)}
+                    className="bg-white p-1.5 rounded-lg border border-da-cardBorder shadow-sm flex items-center gap-2 cursor-pointer active:scale-[0.97] transition-transform h-[68px]"
+                  >
+                    {/* ছবি (বাম পাশে) */}
+                    <div 
+                      onClick={(e) => { e.stopPropagation(); if(prod.image_url) setPreviewImage(prod.image_url); }}
+                      className="w-12 h-12 bg-da-innerBg rounded flex items-center justify-center text-da-textMuted shrink-0 overflow-hidden border border-da-cardBorder relative group"
+                    >
+                      {prod.image_url ? (
+                        <>
                           <img src={prod.image_url} alt={prod.name} className="w-full h-full object-cover" />
-                        ) : (
-                          <ShoppingBag size={20} />
-                        )}
+                          <div className="absolute inset-0 bg-black/20 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
+                            <ZoomIn size={14} className="text-white" />
+                          </div>
+                        </>
+                      ) : (
+                        <ShoppingBag size={20} />
+                      )}
+                    </div>
+
+                    {/* লেখা (ডান পাশে) */}
+                    <div className="flex-1 min-w-0 flex flex-col justify-between h-full py-0.5">
+                      <div>
+                        <h3 className="font-bold text-[11px] text-da-textDark line-clamp-2 leading-tight">{prod.name}</h3>
+                        <div className="flex gap-1 mt-0.5 overflow-hidden">
+                          <span className="text-[8px] font-bold text-da-teal truncate">{prod.category}</span>
+                          <span className="text-[8px] font-bold text-da-blue truncate">• {prod.company}</span>
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <h3 className="font-bold text-sm text-[#0F2A3D] truncate">{prod.name}</h3>
-                          <span className="text-[8px] bg-[#E8F5E9] text-[#0B5C47] px-1.5 py-0.5 rounded font-bold whitespace-nowrap">{prod.category}</span>
-                        </div>
-                        <div className="flex gap-2 text-[10px] text-gray-500 mt-0.5">
-                          <span>স্টক: {toBangla(prod.stock)}</span>
-                          <span className="text-[#1B5E20]">ক্রয়: ৳{toBangla(prod.purchasePrice)}</span>
-                        </div>
+                      <div className="flex justify-between items-end mt-0.5">
+                        <span className="text-[9px] text-da-textMuted font-bold truncate">স্টক: {toBangla(prod.stock)}</span>
+                        <span className="text-[11px] font-black text-da-green shrink-0">৳{toBangla(prod.purchasePrice)}</span>
                       </div>
                     </div>
-                    <button onClick={(e) => addToCart(prod, e)} className="w-8 h-8 bg-white border border-[#1E88E5] text-[#1E88E5] rounded-lg flex items-center justify-center shadow-sm active:scale-90 transition shrink-0 z-10">
-                      <Plus size={18} />
-                    </button>
                   </div>
-                ))
-              )}
-            </div>
+                ))}
+              </div>
+            )}
           </>
         )}
 
+        {/* ================= স্টেপ ২: কার্ট ================= */}
         {step === 2 && (
           <>
-            <div className="grid grid-cols-2 gap-2 shrink-0">
-              <div>
-                <label className="text-[11px] font-bold text-gray-600 mb-1 block">ব্যাচ</label>
-                <input type="text" value={batch} onChange={e => setBatch(e.target.value)} placeholder="ব্যাচ" className="w-full bg-white border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-[#0B5C47]" />
-              </div>
-              <div>
-                <label className="text-[11px] font-bold text-gray-600 mb-1 block">চালান নং</label>
-                <input type="text" value={challan} onChange={e => setChallan(e.target.value)} placeholder="চালান নং" className="w-full bg-white border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-[#0B5C47]" />
-              </div>
-            </div>
 
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden shrink-0">
-              <div className="grid grid-cols-12 bg-gray-50 p-2 text-[11px] font-bold text-gray-600 border-b">
+
+            <div className="bg-white rounded-xl border border-da-cardBorder shadow-sm overflow-hidden shrink-0">
+              <div className="grid grid-cols-12 bg-da-innerBg p-2 text-[11px] font-bold text-da-textMuted border-b border-da-cardBorder">
                 <div className="col-span-5">পণ্য</div>
                 <div className="col-span-2 text-center">পরিমাণ</div>
                 <div className="col-span-2 text-center">দর</div>
                 <div className="col-span-3 text-right">মোট</div>
               </div>
               {cart.length === 0 ? (
-                <div className="p-4 text-center text-sm text-gray-500">কার্ট খালি আছে</div>
+                <div className="p-4 text-center text-sm text-da-textMuted">কার্ট খালি আছে</div>
               ) : (
                 cart.map((item, idx) => (
-                  <div key={idx} className="grid grid-cols-12 p-2 items-center border-b last:border-0 text-xs">
+                  <div key={idx} className="grid grid-cols-12 p-2 items-center border-b border-da-cardBorder last:border-0 text-xs">
                     <div className="col-span-5 font-bold flex flex-col">
-                      <span className="truncate">{item.name}</span>
+                      <span className="truncate text-da-textDark">{item.name}</span>
                     </div>
                     <div className="col-span-2 flex justify-center">
-                      <input type="number" value={item.qty} onChange={(e) => updateQty(item.id, parseInt(e.target.value))} className="w-10 text-center border rounded bg-gray-50 py-1 text-xs" />
+                      <input type="number" value={item.qty} onChange={(e) => updateQty(item.id, parseInt(e.target.value))} className="w-10 text-center border border-da-cardBorder rounded bg-da-innerBg py-1 text-xs" />
                     </div>
                     <div className="col-span-2 flex justify-center">
-                      <input type="number" value={item.rate} onChange={(e) => updateRate(item.id, parseInt(e.target.value))} className="w-12 text-center border rounded bg-white py-1 text-xs font-bold text-[#1E88E5]" />
+                      <input type="number" value={item.rate} onChange={(e) => updateRate(item.id, parseInt(e.target.value))} className="w-12 text-center border border-da-cardBorder rounded bg-white py-1 text-xs font-bold text-da-blue" />
                     </div>
-                    <div className="col-span-3 text-right font-bold flex items-center justify-end gap-1">
+                    <div className="col-span-3 text-right font-bold flex items-center justify-end gap-1 text-da-textDark">
                        ৳{toBangla(item.qty * item.rate)}
-                       <button onClick={() => removeFromCart(item.id)} className="text-red-500 ml-1"><Trash2 size={12}/></button>
+                       <button onClick={() => removeFromCart(item.id)} className="text-da-red ml-1"><Trash2 size={12}/></button>
                     </div>
                   </div>
                 ))
               )}
             </div>
 
-            <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-2.5 flex flex-col gap-2 text-sm shrink-0">
-              <div className="flex justify-between font-bold text-base">
+            <div className="bg-white rounded-xl border border-da-cardBorder shadow-sm p-2.5 flex flex-col gap-2 text-sm shrink-0">
+              <div className="flex justify-between font-bold text-base text-da-textDark">
                 <span>সাব টোটাল</span>
                 <span>৳ {toBangla(subTotal)}</span>
               </div>
 
               <div className="flex flex-col gap-2">
-                <div className="flex justify-between items-center bg-gray-50 p-2 rounded-lg border border-gray-200 cursor-pointer" onClick={() => setHasDiscount(!hasDiscount)}>
-                  <span className="font-bold text-gray-700 text-xs flex items-center gap-1">ডিসকাউন্ট <Tag size={12}/></span>
-                  <button className={`w-9 h-5 rounded-full relative transition-colors ${hasDiscount ? 'bg-[#0B5C47]' : 'bg-gray-300'}`}><div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-all ${hasDiscount ? 'left-4.5' : 'left-0.5'}`}></div></button>
+                <div>
+                  <div className="flex justify-between items-center bg-da-innerBg p-2 rounded-lg border border-da-cardBorder cursor-pointer" onClick={() => setHasDiscount(!hasDiscount)}>
+                    <span className="font-bold text-da-textDark text-xs flex items-center gap-1">ডিসকাউন্ট <Tag size={12}/></span>
+                    <button className={`w-10 h-5 rounded-full relative transition-colors duration-300 ease-in-out ${hasDiscount ? 'bg-da-green' : 'bg-gray-300'}`}>
+                      <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-all duration-300 ease-in-out shadow-sm transform ${hasDiscount ? 'translate-x-5' : 'translate-x-0.5'}`}></div>
+                    </button>
+                  </div>
+                  {hasDiscount && (
+                    <div className="animate-in slide-in-from-top-2 fade-in duration-300">
+                      <input type="number" placeholder="ডিসকাউন্ট পরিমাণ" value={discountAmount} onChange={e => setDiscountAmount(e.target.value)} className="mt-1.5 w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-green" />
+                    </div>
+                  )}
                 </div>
-                {hasDiscount && (
-                  <input type="number" placeholder="ডিসকাউন্ট পরিমাণ" value={discountAmount} onChange={e => setDiscountAmount(e.target.value)} className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-[#0B5C47]" />
-                )}
 
-                <div className="flex justify-between items-center bg-gray-50 p-2 rounded-lg border border-gray-200 cursor-pointer" onClick={() => setHasDelivery(!hasDelivery)}>
-                  <span className="font-bold text-gray-700 text-xs flex items-center gap-1">ডেলিভারি চার্জ <Truck size={12}/></span>
-                  <button className={`w-9 h-5 rounded-full relative transition-colors ${hasDelivery ? 'bg-[#0B5C47]' : 'bg-gray-300'}`}><div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-all ${hasDelivery ? 'left-4.5' : 'left-0.5'}`}></div></button>
+                <div>
+                  <div className="flex justify-between items-center bg-da-innerBg p-2 rounded-lg border border-da-cardBorder cursor-pointer" onClick={() => setHasDelivery(!hasDelivery)}>
+                    <span className="font-bold text-da-textDark text-xs flex items-center gap-1">ডেলিভারি চার্জ <Truck size={12}/></span>
+                    <button className={`w-10 h-5 rounded-full relative transition-colors duration-300 ease-in-out ${hasDelivery ? 'bg-da-green' : 'bg-gray-300'}`}>
+                      <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-all duration-300 ease-in-out shadow-sm transform ${hasDelivery ? 'translate-x-5' : 'translate-x-0.5'}`}></div>
+                    </button>
+                  </div>
+                  {hasDelivery && (
+                    <div className="animate-in slide-in-from-top-2 fade-in duration-300">
+                      <input type="number" placeholder="ডেলিভারি চার্জ" value={deliveryCharge} onChange={e => setDeliveryCharge(e.target.value)} className="mt-1.5 w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-green" />
+                    </div>
+                  )}
                 </div>
-                {hasDelivery && (
-                  <input type="number" placeholder="ডেলিভারি চার্জ" value={deliveryCharge} onChange={e => setDeliveryCharge(e.target.value)} className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-[#0B5C47]" />
-                )}
               </div>
 
-              <div className="flex justify-between font-black text-lg text-[#1E88E5] mt-1 border-t pt-2">
+              <div className="flex justify-between font-black text-lg text-da-blue mt-1 border-t border-da-cardBorder pt-2">
                 <span>সর্বমোট</span>
                 <span>৳ {toBangla(finalTotal)}</span>
               </div>
@@ -391,41 +532,51 @@ export default function PurchasePage({ onBack }: PurchaseProps) {
           </>
         )}
 
+        {/* ================= স্টেপ ৩: পেমেন্ট ================= */}
         {step === 3 && (
           <>
             <div className="text-center py-2 shrink-0">
-              <span className="text-xs text-gray-500 font-bold">মোট প্রদেয়</span>
-              <h2 className="text-3xl font-black text-[#1E88E5]">৳ {toBangla(finalTotal)}</h2>
+              <span className="text-xs text-da-textMuted font-bold">মোট প্রদেয়</span>
+              <h2 className="text-3xl font-black text-da-blue">৳ {toBangla(finalTotal)}</h2>
             </div>
 
             <div className="flex flex-col gap-1 shrink-0">
-               <label className="text-xs font-bold text-[#1E88E5]">ক্যাশ দিয়েছি</label>
-               <input type="number" value={paidAmount} onChange={(e) => setPaidAmount(e.target.value)} className="w-full bg-white border border-gray-300 rounded-lg p-2.5 outline-none focus:border-[#0B5C47] font-bold text-lg shadow-sm" placeholder={finalTotal.toString()} />
-               {Number(paidAmount) > 0 && (
-                 <p className="text-xs font-bold text-red-500 text-right mt-1">বাকি থাকবে: ৳ {toBangla(dueAmount)}</p>
+               <div className="flex justify-between items-center">
+                 <label className="text-xs font-bold text-da-blue">ক্যাশ দিয়েছি</label>
+                 <div className="flex gap-1.5">
+                   <button onClick={() => setPaidAmount(finalTotal.toString())} className="text-[10px] font-bold bg-da-green/10 text-da-green px-2 py-1 rounded border border-da-green/30 active:scale-95 transition">পুরো টাকা</button>
+                   <button onClick={() => setPaidAmount('0')} className="text-[10px] font-bold bg-da-red/10 text-da-red px-2 py-1 rounded border border-da-red/30 active:scale-95 transition">সম্পূর্ণ বাকি</button>
+                 </div>
+               </div>
+               <input type="number" value={paidAmount} onChange={(e) => setPaidAmount(e.target.value)} className="w-full bg-white border border-da-cardBorder rounded-lg p-2.5 outline-none focus:border-da-green font-bold text-lg shadow-sm mt-1" placeholder={finalTotal.toString()} />
+               {Number(paidAmount) > 0 && dueAmount > 0 && (
+                 <p className="text-xs font-bold text-da-red text-right mt-1">বাকি থাকবে: ৳ {toBangla(dueAmount)}</p>
+               )}
+               {Number(paidAmount) >= finalTotal && (
+                 <p className="text-xs font-bold text-da-green text-right mt-1">কোনো বাকি নেই</p>
                )}
             </div>
 
-            <div className="bg-[#F3F4F6] p-2.5 rounded-xl border border-gray-200 flex flex-col gap-2.5 shrink-0">
+            <div className="bg-da-innerBg p-2.5 rounded-xl border border-da-cardBorder flex flex-col gap-2.5 shrink-0">
               <div>
-                <div className="flex justify-between items-center mb-1">
-                  <label className="text-[11px] font-bold text-gray-700 block">সাপ্লায়ার</label>
-                  <button onClick={() => setIsSupplierModalOpen(true)} className="text-[10px] font-bold text-[#0B5C47] flex items-center gap-1 bg-[#E8F5E9] px-2 py-0.5 rounded border border-[#A5D6A7]"><UserPlus size={12}/> নতুন</button>
-                </div>
-                <select value={supplier} onChange={e => setSupplier(e.target.value)} className="w-full border border-gray-300 rounded-lg p-2 outline-none bg-white text-sm">
-                  <option value="">--সিলেক্ট--</option>
-                  {suppliers.map(sup => (
-                    <option key={sup.id} value={sup.id}>{sup.name}</option>
-                  ))}
-                </select>
+                <label className="text-[11px] font-bold text-da-textDark block mb-1">সাপ্লায়ার</label>
+                <button 
+                  onClick={() => setIsSupplierSearchOpen(true)} 
+                  className="w-full border border-da-cardBorder rounded-lg p-2 outline-none bg-white text-sm flex justify-between items-center text-left"
+                >
+                  <span className={supplier ? 'text-da-textDark font-bold' : 'text-gray-500'}>
+                    {supplier ? suppliers.find(s => s.id === supplier)?.name : '--সাপ্লায়ার সিলেক্ট করুন--'}
+                  </span>
+                  <Search size={16} className="text-da-textMuted" />
+                </button>
               </div>
               <div className="flex gap-2">
-                <button onClick={() => receiptInputRef.current?.click()} className="flex-1 bg-white border border-gray-300 rounded-lg p-2 flex items-center justify-center gap-2 text-sm font-bold text-gray-700 overflow-hidden relative">
-                  {receiptImage ? <span className="text-[#0B5C47] truncate w-full">{receiptImage.name}</span> : <><ImageIcon size={16}/> রিসিপ্টের ছবি</>}
+                <button onClick={() => receiptInputRef.current?.click()} className="flex-1 bg-white border border-da-cardBorder rounded-lg p-2 flex items-center justify-center gap-2 text-sm font-bold text-da-textDark overflow-hidden relative">
+                  {receiptImage ? <span className="text-da-teal truncate w-full">{receiptImage.name}</span> : <><ImageIcon size={16}/> রিসিপ্টের ছবি</>}
                 </button>
                 <input type="file" ref={receiptInputRef} onChange={(e) => setReceiptImage(e.target.files?.[0] || null)} accept="image/*" className="hidden" />
                 
-                <input type="date" value={purchaseDate} onChange={e => setPurchaseDate(e.target.value)} className="flex-1 bg-white border border-gray-300 rounded-lg p-2 text-sm font-bold text-gray-700 outline-none" />
+                <input type="date" value={purchaseDate} onChange={e => setPurchaseDate(e.target.value)} className="flex-1 bg-white border border-da-cardBorder rounded-lg p-2 text-sm font-bold text-da-textDark outline-none" />
               </div>
             </div>
 
@@ -438,31 +589,50 @@ export default function PurchasePage({ onBack }: PurchaseProps) {
             </div>
 
             <div className="shrink-0">
-              <h3 className="font-bold text-sm mb-1">মূল্য পরিশোধ পদ্ধতি</h3>
+              <h3 className="font-bold text-sm mb-1 text-da-textDark">মূল্য পরিশোধ পদ্ধতি</h3>
               <div className="grid grid-cols-2 gap-1.5">
-                <PaymentMethod id="cash" label="নগদ" icon={Banknote} selected={paymentMethod} setSelected={setPaymentMethod} />
+                <PaymentMethod id="cash" label="নগদ টাকা" icon={Banknote} selected={paymentMethod} setSelected={setPaymentMethod} />
                 <PaymentMethod id="due" label="বাকি" icon={CreditCard} selected={paymentMethod} setSelected={setPaymentMethod} />
-                <PaymentMethod id="bkash" label="বিকাশ" icon={Smartphone} selected={paymentMethod} setSelected={setPaymentMethod} />
+                <PaymentMethod id="bkash" label="বিকাশ/নগদ" icon={Smartphone} selected={paymentMethod} setSelected={setPaymentMethod} />
                 <PaymentMethod id="bank" label="ব্যাংক" icon={Building2} selected={paymentMethod} setSelected={setPaymentMethod} />
               </div>
             </div>
 
-            <input type="text" value={remarks} onChange={e => setRemarks(e.target.value)} placeholder="মন্তব্য লিখুন" className="w-full bg-white border border-gray-300 rounded-lg p-2.5 outline-none focus:border-[#0B5C47] text-sm shrink-0" />
+            <input type="text" value={remarks} onChange={e => setRemarks(e.target.value)} placeholder="মন্তব্য লিখুন" className="w-full bg-white border border-da-cardBorder rounded-lg p-2.5 outline-none focus:border-da-green text-sm shrink-0" />
           </>
         )}
 
+        {/* ================= স্টেপ ৪: রিসিপ্ট ================= */}
         {step === 4 && (
-          <div className="bg-white p-4 rounded-xl shadow-lg border border-gray-200 font-mono text-sm relative overflow-hidden">
-             <div className="absolute top-0 left-0 w-full h-2 bg-[#0B5C47]"></div>
-             <div className="text-center mt-2 mb-4">
-               <h2 className="text-xl font-bold text-[#0B5C47]">DREAM AGRO</h2>
-               <p className="text-xs text-gray-500">& FISHERIES</p>
-               <p className="text-[11px] mt-2 font-bold">রিসিপ্ট # {receiptId.substring(0, 8).toUpperCase()}</p>
-               <p className="text-[11px]">{new Date(purchaseDate).toLocaleDateString('bn-BD')}</p>
+          <div id="printable-receipt" className="bg-white p-3 rounded-xl shadow-lg border border-da-cardBorder font-serif text-[11px] relative overflow-hidden w-full max-w-sm mx-auto">
+             
+             <div className="text-center mb-2">
+               <h2 className="text-lg font-bold text-da-textDark">{activeBusiness?.name || 'DREAM AGRO'}</h2>
+               <p className="text-[10px] text-da-textMuted">{(activeBusiness as any)?.phone || '01752005057'}</p>
              </div>
-             <div className="border-t border-b border-dashed border-gray-400 py-2 mb-2">
+
+             <div className="flex justify-between items-center mb-2">
+               <p className="font-bold text-da-textDark text-xs">রিসিপ্ট # {receiptId.substring(0, 14).toUpperCase()}</p>
+               <p className="text-[10px] text-da-textMuted">{new Date().toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}</p>
+             </div>
+
+             <div className="mb-2 leading-tight text-[10px] text-da-textDark">
+               <div className="flex justify-between items-center">
+                 <p className="truncate max-w-[55%]"><span className="font-bold">সাপ্লায়ার:</span> {suppliers.find(s => s.id === supplier)?.name || '[দেওয়া হয়নি]'}</p>
+                 <p className="text-right"><span className="font-bold">মোবাইল:</span> {suppliers.find(s => s.id === supplier)?.phone || '[দেওয়া হয়নি]'}</p>
+               </div>
+               <p className="mt-0.5"><span className="font-bold">ঠিকানা:</span> [দেওয়া হয়নি]</p>
+             </div>
+
+             <div className="border-t border-b border-dashed border-da-textMuted py-1 mb-1">
+                <div className="flex justify-between font-bold text-[10px] text-da-textDark mb-1">
+                  <span className="w-1/2">পণ্যের নাম</span>
+                  <span className="w-1/6 text-center">দাম</span>
+                  <span className="w-1/6 text-center">পরিমাণ</span>
+                  <span className="w-1/6 text-right">মোট দাম</span>
+                </div>
                 {cart.map((item, i) => (
-                  <div key={i} className="flex justify-between text-[11px] py-0.5">
+                  <div key={i} className="flex justify-between text-[10px] py-0.5 text-da-textDark">
                     <span className="w-1/2 truncate">{i+1}. {item.name}</span>
                     <span className="w-1/6 text-center">{toBangla(item.rate)} ৳</span>
                     <span className="w-1/6 text-center">{toBangla(item.qty)}</span>
@@ -470,35 +640,51 @@ export default function PurchasePage({ onBack }: PurchaseProps) {
                   </div>
                 ))}
              </div>
-             <div className="flex flex-col gap-1 text-[11px] text-right pr-2">
-                {hasDiscount && <div className="flex justify-between"><span>ডিসকাউন্ট:</span> <span>-{toBangla(discountVal)} ৳</span></div>}
-                {hasDelivery && <div className="flex justify-between"><span>ডেলিভারি:</span> <span>+{toBangla(deliveryVal)} ৳</span></div>}
-                <div className="flex justify-between font-bold text-sm text-[#1E88E5] border-t border-dashed pt-1 mt-1"><span>সর্বমোট প্রদেয়:</span> <span>{toBangla(finalTotal)} ৳</span></div>
+
+             <div className="flex flex-col gap-0.5 text-[10px] text-right pr-1 text-da-textDark">
+                <div className="flex justify-between"><span className="text-da-textMuted">মোট:</span> <span>{toBangla(subTotal)} ৳</span></div>
+                <div className="flex justify-between"><span className="text-da-textMuted">(+) ভ্যাট পরিমাণ:</span> <span>০ ৳</span></div>
+                <div className="flex justify-between"><span className="text-da-textMuted">(-) ডিসকাউন্ট:</span> <span>{toBangla(discountVal)} ৳</span></div>
+                <div className="flex justify-between"><span className="text-da-textMuted">ডেলিভারি চার্জ:</span> <span>{toBangla(deliveryVal)} ৳</span></div>
+                <div className="flex justify-between font-bold text-xs text-da-textDark mt-1 pt-1 border-t border-dashed border-da-textMuted"><span>মোট প্রদেয়:</span> <span>{toBangla(finalTotal)} ৳</span></div>
+                <div className="flex justify-between font-bold text-da-textDark"><span>দিয়েছি:</span> <span>{toBangla(Number(paidAmount) || 0)} ৳</span></div>
+                <div className="flex justify-between font-bold text-da-textDark"><span>এই লেনদেনের বাকি:</span> <span>{toBangla(dueAmount > 0 ? dueAmount : 0)} ৳</span></div>
              </div>
-             <div className="text-center mt-6 text-[10px] text-gray-400">Powered by: Hishabpati ERP</div>
-             <div className="flex justify-center gap-8 mt-5">
-               <button className="flex flex-col items-center gap-1 text-gray-700"><Printer size={26}/><span className="text-[11px] font-bold">প্রিন্ট</span></button>
-               <button className="flex flex-col items-center gap-1 text-gray-700"><Share2 size={26}/><span className="text-[11px] font-bold">শেয়ার</span></button>
+
+             <div className="mt-2 text-[10px] text-da-textDark">
+               <p>মূল্যপরিশোধ পদ্ধতি: {paymentMethod === 'cash' ? 'নগদ টাকা' : paymentMethod === 'due' ? 'বাকি' : paymentMethod === 'bkash' ? 'বিকাশ/নগদ' : 'ব্যাংক চেক'}</p>
+               {remarks && <p className="mt-0.5">নোট: {remarks}</p>}
+             </div>
+
+             <div className="text-center mt-3 text-[9px] text-da-textMuted">Powered by: Akand Smart Solutions</div>
+             
+             <div className="flex justify-center gap-6 mt-3 print:hidden">
+               <button onClick={() => window.print()} className="flex flex-col items-center gap-1 text-da-textDark active:scale-95 transition">
+                 <Printer size={20}/><span className="text-[10px] font-bold">রিসিপ্ট প্রিন্ট করুন</span>
+               </button>
+               <button onClick={handleShareReceipt} className="flex flex-col items-center gap-1 text-da-textDark active:scale-95 transition">
+                 <Share2 size={20}/><span className="text-[10px] font-bold">রিসিপ্ট শেয়ার করুন</span>
+               </button>
              </div>
           </div>
         )}
 
       </main>
 
-      <div className="fixed bottom-0 left-0 w-full bg-white border-t border-gray-200 p-2.5 z-50">
+      <div className="fixed bottom-0 left-0 w-full bg-white border-t border-da-cardBorder p-2.5 z-50">
          {step === 1 && (
-           <div className="flex justify-between items-center bg-[#1E88E5] text-white p-2 rounded-xl shadow-md">
+           <div className="flex justify-between items-center bg-da-blue text-white p-2 rounded-xl shadow-blue-soft">
              <div className="flex items-center gap-2 font-bold text-sm pl-1"><ShoppingBag size={18} /> পণ্য: {toBangla(cart.reduce((a,c)=>a+c.qty,0))}</div>
-             <button onClick={() => setStep(2)} disabled={cart.length === 0} className="bg-white text-[#1E88E5] px-4 py-2 rounded-lg font-bold shadow-sm flex items-center gap-1 disabled:opacity-50">পণ্য কিনুন <ChevronRight size={18}/></button>
+             <button onClick={() => setStep(2)} disabled={cart.length === 0} className="bg-white text-da-blue px-4 py-2 rounded-lg font-bold shadow-sm flex items-center gap-1 disabled:opacity-50">পণ্য কিনুন <ChevronRight size={18}/></button>
            </div>
          )}
-         {step === 2 && <button onClick={() => setStep(3)} className="w-full bg-[#1E88E5] text-white py-3 rounded-xl font-bold shadow-md flex justify-center items-center gap-2">এগিয়ে যান <ChevronRight size={18}/></button>}
+         {step === 2 && <button onClick={() => setStep(3)} className="w-full bg-da-blue text-white py-3 rounded-xl font-bold shadow-blue-soft flex justify-center items-center gap-2">এগিয়ে যান <ChevronRight size={18}/></button>}
          {step === 3 && (
-           <button onClick={handleConfirmPurchase} disabled={isSaving} className="w-full bg-[#1E88E5] text-white py-3 rounded-xl font-bold shadow-md flex justify-center items-center gap-2">
+           <button onClick={handleConfirmPurchase} disabled={isSaving} className="w-full bg-da-blue text-white py-3 rounded-xl font-bold shadow-blue-soft flex justify-center items-center gap-2">
              {isSaving ? <Loader2 className="animate-spin" size={18}/> : <CheckCircle2 size={18}/>} পেমেন্ট কনফার্ম করুন
            </button>
          )}
-         {step === 4 && <button onClick={onBack} className="w-full bg-[#1E88E5] text-white py-3 rounded-xl font-bold shadow-md">সম্পন্ন করুন</button>}
+         {step === 4 && <button onClick={onBack} className="w-full bg-da-blue text-white py-3 rounded-xl font-bold shadow-blue-soft">সম্পন্ন করুন</button>}
       </div>
 
       {flyingItem && (
@@ -508,26 +694,70 @@ export default function PurchasePage({ onBack }: PurchaseProps) {
         </div>
       )}
 
+      {/* ফিল্টার মডাল */}
+      {isFilterModalOpen && (
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-xs overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="bg-da-greenDeep p-3 flex justify-between items-center text-white">
+              <h2 className="font-bold text-sm flex items-center gap-2"><Filter size={16}/> অ্যাডভান্সড ফিল্টার</h2>
+              <button onClick={() => setIsFilterModalOpen(false)} className="p-1 bg-white/20 rounded-full"><X size={16}/></button>
+            </div>
+            <div className="p-4 flex flex-col gap-4 max-h-[60vh] overflow-y-auto">
+              <div>
+                <p className="text-xs font-bold text-da-textMuted mb-2 border-b border-da-cardBorder pb-1">ক্যাটাগরি সিলেক্ট করুন</p>
+                <div className="flex flex-col gap-1.5">
+                  <button onClick={() => { handleCategorySelect('All'); setIsFilterModalOpen(false); }} className={`flex justify-between items-center p-2 rounded-lg border text-sm ${selectedCategory === 'All' ? 'border-da-green bg-da-green/10 text-da-green font-bold' : 'border-da-cardBorder text-da-textMuted'}`}>সব ক্যাটাগরি {selectedCategory === 'All' && <Check size={16}/>}</button>
+                  {allCategories.map(cat => (
+                    <button key={cat} onClick={() => { handleCategorySelect(cat); setIsFilterModalOpen(false); }} className={`flex justify-between items-center p-2 rounded-lg border text-sm ${selectedCategory === cat ? 'border-da-green bg-da-green/10 text-da-green font-bold' : 'border-da-cardBorder text-da-textMuted'}`}>{cat} {selectedCategory === cat && <Check size={16}/>}</button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-xs font-bold text-da-textMuted mb-2 border-b border-da-cardBorder pb-1">কোম্পানি সিলেক্ট করুন</p>
+                <div className="flex flex-col gap-1.5">
+                  <button onClick={() => { handleCompanySelect('All'); setIsFilterModalOpen(false); }} className={`flex justify-between items-center p-2 rounded-lg border text-sm ${selectedCompany === 'All' ? 'border-da-blue bg-da-blue/10 text-da-blue font-bold' : 'border-da-cardBorder text-da-textMuted'}`}>সব কোম্পানি {selectedCompany === 'All' && <Check size={16}/>}</button>
+                  {allCompanies.map(comp => (
+                    <button key={comp} onClick={() => { handleCompanySelect(comp); setIsFilterModalOpen(false); }} className={`flex justify-between items-center p-2 rounded-lg border text-sm ${selectedCompany === comp ? 'border-da-blue bg-da-blue/10 text-da-blue font-bold' : 'border-da-cardBorder text-da-textMuted'}`}>{comp} {selectedCompany === comp && <Check size={16}/>}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ইমেজ প্রিভিউ মডাল */}
+      {previewImage && (
+        <div className="fixed inset-0 bg-black/90 z-[110] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setPreviewImage(null)}>
+          <div className="relative max-w-lg w-full max-h-[80vh] flex items-center justify-center">
+            <img src={previewImage} alt="Preview" className="max-w-full max-h-[80vh] object-contain rounded-xl shadow-2xl" />
+            <button onClick={() => setPreviewImage(null)} className="absolute -top-10 right-0 p-2 bg-white/20 text-white rounded-full hover:bg-white/40 transition">
+              <X size={24} />
+            </button>
+          </div>
+        </div>
+      )}
+
       {isSupplierModalOpen && (
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl w-full max-w-xs overflow-hidden shadow-2xl">
-            <div className="bg-[#0B5C47] p-3 flex justify-between items-center text-white">
+            <div className="bg-da-greenDeep p-3 flex justify-between items-center text-white">
               <h2 className="font-bold text-sm flex items-center gap-2"><UserPlus size={16}/> নতুন সাপ্লায়ার</h2>
               <button onClick={() => setIsSupplierModalOpen(false)} className="p-1 bg-white/20 rounded-full"><X size={16}/></button>
             </div>
             <div className="p-4 flex flex-col gap-3">
               <div>
-                <label className="text-xs font-bold text-gray-600 mb-1 block">নাম <span className="text-red-500">*</span></label>
-                <input type="text" value={newSupplier.name} onChange={e => setNewSupplier({...newSupplier, name: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-[#0B5C47]" />
+                <label className="text-xs font-bold text-da-textMuted mb-1 block">নাম <span className="text-da-red">*</span></label>
+                <input type="text" value={newSupplier.name} onChange={e => setNewSupplier({...newSupplier, name: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-green" />
               </div>
               <div>
-                <label className="text-xs font-bold text-gray-600 mb-1 block">মোবাইল</label>
-                <input type="text" value={newSupplier.phone} onChange={e => setNewSupplier({...newSupplier, phone: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-[#0B5C47]" />
+                <label className="text-xs font-bold text-da-textMuted mb-1 block">মোবাইল</label>
+                <input type="text" value={newSupplier.phone} onChange={e => setNewSupplier({...newSupplier, phone: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-green" />
               </div>
             </div>
-            <div className="p-3 border-t bg-gray-50 flex gap-2">
-              <button onClick={() => setIsSupplierModalOpen(false)} className="flex-1 bg-white border border-gray-300 text-gray-700 py-2 rounded-xl font-bold">বাতিল</button>
-              <button onClick={handleAddSupplier} disabled={isSaving} className="flex-1 bg-[#1E88E5] text-white py-2 rounded-xl font-bold shadow-md flex justify-center items-center">{isSaving ? <Loader2 size={16} className="animate-spin"/> : 'সেভ করুন'}</button>
+            <div className="p-3 border-t border-da-cardBorder bg-da-innerBg flex gap-2">
+              <button onClick={() => setIsSupplierModalOpen(false)} className="flex-1 bg-white border border-da-cardBorder text-da-textMuted py-2 rounded-xl font-bold">বাতিল</button>
+              <button onClick={handleAddSupplier} disabled={isSaving} className="flex-1 bg-da-blue text-white py-2 rounded-xl font-bold shadow-blue-soft flex justify-center items-center">{isSaving ? <Loader2 size={16} className="animate-spin"/> : 'সেভ করুন'}</button>
             </div>
           </div>
         </div>
@@ -546,6 +776,60 @@ export default function PurchasePage({ onBack }: PurchaseProps) {
         </div>
       )}
 
+      {/* নতুন সাপ্লায়ার সার্চ মডাল */}
+      {isSupplierSearchOpen && (
+        <div className="fixed inset-0 bg-black/60 z-[100] flex justify-center items-end backdrop-blur-sm">
+          <div className="bg-white w-full h-[80dvh] sm:max-w-md sm:rounded-2xl rounded-t-2xl flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-300">
+            <div className="bg-da-greenDeep p-3 flex justify-between items-center text-white shrink-0">
+              <h2 className="font-bold text-sm flex items-center gap-2"><Search size={16}/> সাপ্লায়ার খুঁজুন</h2>
+              <button onClick={() => setIsSupplierSearchOpen(false)} className="p-1 bg-white/20 rounded-full"><X size={16}/></button>
+            </div>
+            
+            <div className="p-3 border-b border-da-cardBorder shrink-0">
+              <div className="bg-da-innerBg border border-da-cardBorder rounded-lg px-3 py-2 flex items-center gap-2">
+                <Search size={18} className="text-da-textMuted" />
+                <input 
+                  type="text" 
+                  placeholder="সাপ্লায়ারের নাম..." 
+                  value={supplierSearchQuery}
+                  onChange={e => setSupplierSearchQuery(e.target.value)}
+                  className="w-full outline-none text-sm bg-transparent" 
+                />
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
+              {suppliers.filter(s => s.name.toLowerCase().includes(supplierSearchQuery.toLowerCase())).length === 0 ? (
+                <div className="text-center text-da-textMuted mt-5 text-sm">কোনো সাপ্লায়ার পাওয়া যায়নি</div>
+              ) : (
+                suppliers.filter(s => s.name.toLowerCase().includes(supplierSearchQuery.toLowerCase())).map(sup => (
+                  <div 
+                    key={sup.id} 
+                    onClick={() => { setSupplier(sup.id); setIsSupplierSearchOpen(false); }}
+                    className={`p-3 rounded-xl border flex justify-between items-center cursor-pointer transition ${supplier === sup.id ? 'border-da-teal bg-da-teal/5' : 'border-da-cardBorder bg-white hover:bg-da-innerBg'}`}
+                  >
+                    <div>
+                      <p className="font-bold text-sm text-da-textDark">{sup.name}</p>
+                      <p className="text-[10px] text-da-textMuted">{sup.phone || 'মোবাইল নেই'}</p>
+                    </div>
+                    {supplier === sup.id && <CheckCircle2 size={20} className="text-da-teal" />}
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="p-3 border-t border-da-cardBorder bg-da-innerBg shrink-0">
+              <button 
+                onClick={() => { setIsSupplierSearchOpen(false); setIsSupplierModalOpen(true); }} 
+                className="w-full bg-da-blue text-white py-3 rounded-xl font-bold shadow-blue-soft flex items-center justify-center gap-2 active:scale-95 transition"
+              >
+                <UserPlus size={18}/> নতুন সাপ্লায়ার যোগ করুন
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
@@ -554,14 +838,14 @@ function PaymentMethod({ id, label, icon: Icon, selected, setSelected }: any) {
   return (
     <button 
       onClick={() => setSelected(id)}
-      className={`flex items-center justify-between p-2.5 rounded-lg border transition ${selected === id ? 'border-[#1E88E5] bg-[#EFF6FF]' : 'border-gray-200 bg-white'}`}
+      className={`flex items-center justify-between p-2.5 rounded-lg border transition ${selected === id ? 'border-da-blue bg-da-blue/10 shadow-sm' : 'border-da-cardBorder bg-white'}`}
     >
       <div className="flex items-center gap-2.5">
-        <Icon size={18} className={selected === id ? 'text-[#1E88E5]' : 'text-gray-500'} />
-        <span className={`text-sm font-bold ${selected === id ? 'text-[#1E88E5]' : 'text-gray-700'}`}>{label}</span>
+        <Icon size={18} className={selected === id ? 'text-da-blue' : 'text-da-textMuted'} />
+        <span className={`text-sm font-bold ${selected === id ? 'text-da-blue' : 'text-da-textMuted'}`}>{label}</span>
       </div>
-      <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${selected === id ? 'border-[#1E88E5]' : 'border-gray-400'}`}>
-        {selected === id && <div className="w-2 h-2 bg-[#1E88E5] rounded-full"></div>}
+      <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${selected === id ? 'border-da-blue' : 'border-da-textMuted/50'}`}>
+        {selected === id && <div className="w-2 h-2 bg-da-blue rounded-full"></div>}
       </div>
     </button>
   );

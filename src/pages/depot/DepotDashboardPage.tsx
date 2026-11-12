@@ -163,8 +163,27 @@ export default function DepotDashboardPage({ onNavigate, onToggleMode }: Props) 
           <div className="col-span-2"><SummaryCard title="পাওনা" icon={HandCoins} color="#D97706" valueClass="text-[#B45309]" cardClass="from-[#FDEFD0] to-white border-[#F5D69A]" isLoading={isLoading} value={stats.marketDue} /></div>
           <div className="col-span-2"><SummaryCard title="দেনা" icon={Building2} color="#D32F2F" valueClass="text-da-red" cardClass="from-[#FCE2E2] to-white border-[#F3BDBD]" isLoading={isLoading} value={stats.companyPayable} /></div>
           
-          <div className="col-span-3"><SummaryCard title={`${selectedPeriod === 'TODAY' ? 'আজকের' : selectedPeriod === 'WEEK' ? 'সাপ্তাহিক' : 'এই মাসের'} বিক্রি`} icon={ReceiptText} color="#2E7D32" valueClass="text-da-green" cardClass="from-[#DCFCE7] to-white border-[#86EFAC]" isLoading={isLoading} value={stats.periodSale} /></div>
-          <div className="col-span-3"><SummaryCard title={`${selectedPeriod === 'TODAY' ? 'আজকের' : selectedPeriod === 'WEEK' ? 'সাপ্তাহিক' : 'এই মাসের'} খরচ`} icon={Banknote} color="#B91C1C" valueClass="text-red-600" cardClass="from-[#FEE2E2] to-white border-[#FCA5A5]" isLoading={isLoading} value={stats.periodExpense} /></div>
+          {/* আজকের বিক্রি (হরাইজন্টাল কার্ড) */}
+          <div className="col-span-3 bg-gradient-to-r from-[#DCFCE7] to-white border border-[#86EFAC] rounded-xl p-2.5 shadow-sm flex items-center gap-3">
+            <div className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 bg-green-100 text-green-700 shadow-inner">
+              <ReceiptText size={24} className="drop-shadow-sm" />
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] font-bold text-da-textMuted">{selectedPeriod === 'TODAY' ? 'আজকের' : selectedPeriod === 'WEEK' ? 'সাপ্তাহিক' : 'এই মাসের'} বিক্রি</span>
+              {isLoading ? <Loader2 size={18} className="animate-spin text-da-green mt-0.5" /> : <span className="font-black text-lg text-da-green leading-none mt-0.5">৳{toBangla(stats.periodSale)}</span>}
+            </div>
+          </div>
+
+          {/* আজকের খরচ (হরাইজন্টাল কার্ড) */}
+          <div className="col-span-3 bg-gradient-to-r from-[#FEE2E2] to-white border border-[#FCA5A5] rounded-xl p-2.5 shadow-sm flex items-center gap-3">
+            <div className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 bg-red-100 text-red-600 shadow-inner">
+              <Banknote size={24} className="drop-shadow-sm" />
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] font-bold text-da-textMuted">{selectedPeriod === 'TODAY' ? 'আজকের' : selectedPeriod === 'WEEK' ? 'সাপ্তাহিক' : 'এই মাসের'} খরচ</span>
+              {isLoading ? <Loader2 size={18} className="animate-spin text-da-red mt-0.5" /> : <span className="font-black text-lg text-da-red leading-none mt-0.5">৳{toBangla(stats.periodExpense)}</span>}
+            </div>
+          </div>
         </div>
 
         {/* মূল মডিউল গ্রিড (১৩টি) */}
@@ -181,12 +200,11 @@ export default function DepotDashboardPage({ onNavigate, onToggleMode }: Props) 
             
             <DepotModuleButton title="বিক্রি" icon={ReceiptText} color="#2E7D32" onClick={() => onNavigate('sale')} />
             <DepotModuleButton title="খরচ" icon={Banknote} color="#D32F2F" onClick={() => onNavigate('expense_khata')} />
-            <DepotModuleButton title="বোনাস" icon={Gift} color="#E65100" onClick={() => onNavigate('stock')} />
+            <DepotModuleButton title="বোনাস" icon={Gift} color="#E65100" onClick={() => onNavigate('bonus')} />
             <DepotModuleButton title="রিপোর্টস" icon={BarChart3} color="#00796B" onClick={() => onNavigate('reports')} />
             
             <DepotModuleButton title="পার্টনার" icon={Handshake} color="#8E24AA" onClick={() => onNavigate('partners')} />
             <DepotModuleButton title="কোম্পানি" icon={Building2} color="#455A64" onClick={() => onNavigate('company')} />
-            <DepotModuleButton title="মার্কেট" icon={Store} color="#F57C00" onClick={() => onNavigate('market')} />
             <DepotModuleButton title="অ্যাপ এক্সেস" icon={KeyRound} color="#1E88E5" onClick={() => onNavigate('app_access')} />
             
             <DepotModuleButton title="রিসাইকেল বিন" icon={Recycle} color="#C62828" onClick={() => onNavigate('recycle_bin')} />
@@ -248,11 +266,11 @@ function SummaryCard({ title, icon: Icon, color, valueClass, cardClass, isLoadin
 function DepotModuleButton({ title, icon: Icon, color, onClick }: { title: string, icon: any, color: string, onClick: () => void }) {
   return (
     <button onClick={onClick} className="flex flex-col items-center justify-start cursor-pointer w-full active:scale-95 transition">
-      <div className="relative overflow-hidden w-11 h-11 rounded-xl flex items-center justify-center mb-1 border border-white/30" style={{ background: `linear-gradient(145deg, ${color}, ${shade(color, 0.35)})`, boxShadow: `0 6px 10px -4px ${color}AA` }}>
-        <span className="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-white/15"></span>
-        <Icon size={20} strokeWidth={1.9} className="relative text-white drop-shadow" />
+      <div className="relative overflow-hidden w-14 h-14 rounded-2xl flex items-center justify-center mb-1.5 border border-white/30" style={{ background: `linear-gradient(145deg, ${color}, ${shade(color, 0.35)})`, boxShadow: `0 8px 14px -6px ${color}AA` }}>
+        <span className="absolute -top-4 -right-4 w-10 h-10 rounded-full bg-white/15"></span>
+        <Icon size={28} strokeWidth={1.9} className="relative text-white drop-shadow" />
       </div>
-      <span className="text-[9.5px] font-bold text-da-textDark text-center leading-tight">{title}</span>
+      <span className="text-[10px] font-bold text-da-textDark text-center leading-tight">{title}</span>
     </button>
   );
 }

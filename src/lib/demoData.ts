@@ -69,9 +69,14 @@ export const demoDashboardStats = {
 };
 
 export const demoExpenses = [
-  { id: '1', reason: 'দোকান ভাড়া', amount: 5000, date: '10 Nov 2026', rawDate: new Date('2026-11-10').getTime(), note: 'নভেম্বর মাসের ভাড়া' },
-  { id: '2', reason: 'বিদ্যুৎ বিল', amount: 1200, date: '09 Nov 2026', rawDate: new Date('2026-11-09').getTime(), note: 'অক্টোবর মাসের বিল' },
-  { id: '3', reason: 'কর্মচারী বেতন', amount: 15000, date: '05 Nov 2026', rawDate: new Date('2026-11-05').getTime(), note: '' }
+  { id: '1', reason: 'গোডাউন ভাড়া', expense_type: 'গোডাউন ভাড়া', for_whom: 'ম্যানেজার', employee_name: 'রফিক', amount: 15000, date: '10 Nov 2026', rawDate: new Date('2026-11-10').getTime(), note: 'নভেম্বর মাসের ভাড়া' },
+  { id: '2', reason: 'বিদ্যুৎ বিল', expense_type: 'বিদ্যুৎ বিল', for_whom: 'দোকান', employee_name: 'সজীব', amount: 1200, date: '09 Nov 2026', rawDate: new Date('2026-11-09').getTime(), note: 'অক্টোবর মাসের বিল' },
+  { id: '3', reason: 'লোডিং খরচ', expense_type: 'পরিবহন', for_whom: 'ড্রাইভার', employee_name: '', amount: 5000, date: '05 Nov 2026', rawDate: new Date('2026-11-05').getTime(), note: '' }
+];
+
+export const demoEmployeesList = [
+  { id: 'e1', name: 'রফিকুল ইসলাম' },
+  { id: 'e2', name: 'সজীব আহমেদ' }
 ];
 
 export const demoDepotStats = {
@@ -80,7 +85,6 @@ export const demoDepotStats = {
   companyPayable: 35000,
   todaySale: 12500,
   todayExpense: 2500,
-  todayProfit: 10000
 };
 
 export const demoSuppliers = [
@@ -147,6 +151,107 @@ export const demoInternalTransfers = [
     items: [
       { id: 'p1', name: "গ্রোয়ার ফিড (২৫ কেজি)", quantity: 50, unit: "বস্তা" },
       { id: 'p2', name: "রুই পোনা খাদ্য (১০ কেজি)", quantity: 20, unit: "ব্যাগ" }
+    ]
+  }
+];
+
+export const demoCompanyStats = {
+  currentStockValue: 150000,
+  companyPayable: 35000,
+};
+
+export const demoCompanyActivities = [
+  { id: 'a1', type: 'মাল গ্রহণ', date: '10 Nov 2026', amount: 50000, details: 'চালান #CH-102, ৫০ বস্তা গ্রোয়ার ফিড' },
+  { id: 'a2', type: 'মাল ট্রান্সফার', date: '09 Nov 2026', amount: 20000, details: 'গাজীপুর ডিপোতে ২০ বস্তা পাঠানো হয়েছে' },
+  { id: 'a3', type: 'লেনদেন', date: '08 Nov 2026', amount: 30000, details: 'ব্যাংক ট্রান্সফার এর মাধ্যমে পেমেন্ট' },
+];
+
+export const demoSupplierStats = {
+  totalDue: 15000,
+  totalPurchased: 250000,
+};
+
+export const demoSupplierActivities = [
+  { id: 'sa1', type: 'মাল গ্রহণ', date: '11 Nov 2026', amount: 40000, details: 'চালান #CH-105, ৩০ বস্তা মাছের খাদ্য' },
+  { id: 'sa2', type: 'পেমেন্ট', date: '10 Nov 2026', amount: 25000, details: 'বিকাশের মাধ্যমে পেমেন্ট' },
+  { id: 'sa3', type: 'মাল গ্রহণ', date: '08 Nov 2026', amount: 60000, details: 'চালান #CH-098, ৫০ বস্তা গ্রোয়ার ফিড' },
+];
+
+export const demoCompaniesList = [
+  { id: 'c1', name: 'নিউজা', commission: 5, max_discount: 2, contact_person: 'রফিক', phone: '01711223344', address: 'ঢাকা', notes: '', commission_rate_upto_100: 1000, commission_rate_above_100: 1300, loading_unloading_rate_per_ton: 500, delivery_rent_per_ton: 1000, transport_allowance_per_ton: 0, default_warehouse_rent: 15000, default_manager_salary: 10000, image_url: '', documents: ['trade_license.pdf'] },
+  { id: 'c2', name: 'প্যারাগন', commission: 4, max_discount: 1, contact_person: 'সজীব', phone: '01811223344', address: 'গাজীপুর', notes: '', commission_rate_upto_100: 800, commission_rate_above_100: 1000, loading_unloading_rate_per_ton: 400, delivery_rent_per_ton: 800, transport_allowance_per_ton: 0, default_warehouse_rent: 15000, default_manager_salary: 10000, image_url: '', documents: [] }
+];
+
+export const demoPartners = [
+  { id: 'p1', name: 'আব্দুর রহিম', phone: '01711223344', address: 'ঢাকা', share_percentage: 60, initial_capital: 500000, image_url: '', document_url: '' },
+  { id: 'p2', name: 'করিম মিয়া', phone: '01811223344', address: 'গাজীপুর', share_percentage: 40, initial_capital: 300000, image_url: '', document_url: '' }
+];
+
+export const demoPartnerTransactions = [
+  { id: 't1', partner_id: 'p1', amount: 50000, transaction_date: '2026-11-10', note: 'অতিরিক্ত বিনিয়োগ' },
+  { id: 't2', partner_id: 'p1', amount: -20000, transaction_date: '2026-11-12', note: 'ব্যক্তিগত উত্তোলন' },
+  { id: 't3', partner_id: 'p2', amount: 30000, transaction_date: '2026-11-11', note: 'অতিরিক্ত বিনিয়োগ' }
+];
+
+export const demoBusinessProfit = 250000;
+
+export const demoDepotExpenses = [
+  { id: '1', reason: 'গোডাউন ভাড়া', expense_type: 'গোডাউন ভাড়া', for_whom: 'ম্যানেজার', employee_name: 'রফিকুল ইসলাম', amount: 15000, date: '10 Nov 2026', rawDate: new Date('2026-11-10').getTime(), note: 'নভেম্বর মাসের ভাড়া' },
+  { id: '2', reason: 'বিদ্যুৎ বিল', expense_type: 'বিদ্যুৎ বিল', for_whom: 'দোকান', employee_name: 'সজীব আহমেদ', amount: 1200, date: '09 Nov 2026', rawDate: new Date('2026-11-09').getTime(), note: 'অক্টোবর মাসের বিল' },
+  { id: '3', reason: 'লোডিং খরচ', expense_type: 'পরিবহন', for_whom: 'ড্রাইভার', employee_name: '', amount: 5000, date: '05 Nov 2026', rawDate: new Date('2026-11-05').getTime(), note: '' }
+];
+
+export const demoDepotReportData = {
+  totalSales: 125000,
+  totalPurchases: 85000,
+  totalExpenses: 15000,
+  transportSurplus: 5000, // (-) হলে ঘাটতি, (+) হলে উদ্বৃত্ত
+  totalProfit: 30000,
+  partnerProfit: 15000, // উদাহরণস্বরূপ ৫০% শেয়ার
+};
+
+export const demoDepotReportDetails = {
+  sales: [
+    { id: 's1', receipt_no: 'INV-1001', date: '12 Nov 2026', amount: 12500, party: 'ভাই ভাই এগ্রো' },
+    { id: 's2', receipt_no: 'INV-1002', date: '11 Nov 2026', amount: 8000, party: 'সাধারণ কাস্টমার' },
+  ],
+  purchases: [
+    { id: 'p1', challan_no: 'CH-501', date: '10 Nov 2026', amount: 45000, party: 'নিউজা' },
+    { id: 'p2', challan_no: 'CH-502', date: '09 Nov 2026', amount: 20000, party: 'স্কয়ার' },
+  ],
+  expenses: [
+    { id: 'e1', type: 'গোডাউন ভাড়া', date: '05 Nov 2026', amount: 15000, note: 'নভেম্বর মাসের ভাড়া' },
+    { id: 'e2', type: 'বিদ্যুৎ বিল', date: '04 Nov 2026', amount: 2000, note: 'অক্টোবর মাসের বিল' },
+  ],
+  transport: [
+    { id: 't1', challan_no: 'CH-501', date: '10 Nov 2026', amount: 5000, party: 'নিউজা (উদ্বৃত্ত)' },
+  ],
+  profit: [
+    { id: 'pr1', month: 'নভেম্বর ২০২৬', date: '30 Nov 2026', amount: 30000, note: 'মোট লাভ' },
+  ],
+  partner_profit: [
+    { id: 'pp1', name: 'আব্দুর রহিম', date: '30 Nov 2026', amount: 18000, note: '৬০% শেয়ার' },
+    { id: 'pp2', name: 'করিম মিয়া', date: '30 Nov 2026', amount: 12000, note: '৪০% শেয়ার' },
+  ]
+};
+
+export const demoBonusEntries = [
+  {
+    id: 'b1',
+    company_name: 'নিউজা',
+    date: '12 Nov 2026',
+    note: 'গাড়িপ্রতি ১০ বস্তা ফ্রি',
+    items: [
+      { product_name: 'গ্রোয়ার ফিড', quantity: 10 }
+    ]
+  },
+  {
+    id: 'b2',
+    company_name: 'স্কয়ার',
+    date: '10 Nov 2026',
+    note: 'ঔষধ কোম্পানির বোনাস',
+    items: [
+      { product_name: 'ক্যালসিয়াম পাউডার', quantity: 20 }
     ]
   }
 ];

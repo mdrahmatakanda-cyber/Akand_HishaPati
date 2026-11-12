@@ -6,6 +6,12 @@ import DepotStockPage from './pages/depot/DepotStockPage';
 import DepotDealerPage from './pages/depot/DepotDealerPage';
 import DepotOfficerPage from './pages/depot/DepotOfficerPage';
 import DepotTransferPage from './pages/depot/DepotTransferPage';
+import DepotBonusPage from './pages/depot/DepotBonusPage';
+import DepotCompanyPage from './pages/depot/DepotCompanyPage';
+import DepotStockInPage from './pages/depot/DepotStockInPage';
+import DepotExpensePage from './pages/depot/DepotExpensePage';
+import DepotReportsPage from './pages/depot/DepotReportsPage';
+
 import {
   PurchasePage, SalePage,
   PurchaseKhataPage, SaleKhataPage, DueKhataPage, ExpenseKhataPage,
@@ -37,7 +43,7 @@ export type ScreenKey =
   | 'depot' | 'sr' | 'market' | 'company'
   | 'cashbox' | 'partners' | 'marketing' | 'app_access'
   | 'expired' | 'warranty' | 'printer' | 'recycle_bin'
-  | 'inbox' | 'help' | 'menu' | 'calculator';
+  | 'inbox' | 'help' | 'menu' | 'calculator' | 'bonus';
 
 export type BusinessMode = 'shop' | 'depot' | 'general';
 
@@ -199,13 +205,21 @@ function AppContent() {
     }
     if (currentScreen === 'calculator') return <CalculatorPage onBack={goBack} />;
 
-    if (currentScreen === 'purchase') return <PurchasePage onBack={goBack} onNavigate={navigateTo} />;
+    if (currentScreen === 'purchase') {
+      return currentMode === 'depot'
+        ? <DepotStockInPage onBack={goBack} />
+        : <PurchasePage onBack={goBack} onNavigate={navigateTo} />;
+    }
     if (currentScreen === 'sale') return <SalePage onBack={goBack} onNavigate={navigateTo} />;
 
     if (currentScreen === 'purchase_khata') return <PurchaseKhataPage onBack={goBack} onNavigate={navigateTo} />;
     if (currentScreen === 'sale_khata') return <SaleKhataPage onBack={goBack} onNavigate={navigateTo} />;
     if (currentScreen === 'due_khata') return <DueKhataPage onBack={goBack} onNavigate={navigateTo} />;
-    if (currentScreen === 'expense_khata') return <ExpenseKhataPage onBack={goBack} onNavigate={navigateTo} />;
+    if (currentScreen === 'expense_khata') {
+      return currentMode === 'depot'
+        ? <DepotExpensePage onBack={goBack} onNavigate={navigateTo} />
+        : <ExpenseKhataPage onBack={goBack} onNavigate={navigateTo} />;
+    }
 
     if (currentScreen === 'new_expense') return <NewExpensePage onBack={goBack} />;
     if (currentScreen === 'expense_history') return <ExpenseHistoryPage onBack={goBack} />;
@@ -226,19 +240,29 @@ function AppContent() {
         ? <DepotDealerPage onBack={goBack} onNavigate={navigateTo} />
         : <MarketPage onBack={goBack} />;
     }
-    if (currentScreen === 'reports') return <ReportsPage onBack={goBack} onNavigate={navigateTo} />;
+    if (currentScreen === 'reports') {
+      return currentMode === 'depot'
+        ? <DepotReportsPage onBack={goBack} />
+        : <ReportsPage onBack={goBack} onNavigate={navigateTo} />;
+    }
 
     if (currentScreen === 'depot') {
       return currentMode === 'depot'
         ? <DepotTransferPage onBack={goBack} onNavigate={navigateTo} />
         : <DepotPage onBack={goBack} />;
     }
+
+    if (currentScreen === 'bonus') return <DepotBonusPage onBack={goBack} />;
     if (currentScreen === 'sr') {
       return currentMode === 'depot' 
         ? <DepotOfficerPage onBack={goBack} onNavigate={navigateTo} />
         : <SrPage onBack={goBack} />;
     }
-    if (currentScreen === 'company') return <CompanyPage onBack={goBack} />;
+    if (currentScreen === 'company') {
+      return currentMode === 'depot'
+        ? <DepotCompanyPage onBack={goBack} onNavigate={navigateTo} />
+        : <CompanyPage onBack={goBack} />;
+    }
 
     if (currentScreen === 'cashbox') return <CashboxPage onBack={goBack} />;
     if (currentScreen === 'partners') return <PartnersPage onBack={goBack} />;

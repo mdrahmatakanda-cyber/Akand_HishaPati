@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { 
   ArrowLeft, Search, Clock, 
-  X, ScanBarcode, Tag, Building2, Package, Loader2, List
+  X, ScanBarcode, Tag, Building2, Package, Loader2, List, Plus
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { toBangla } from '../../lib/utils';
@@ -194,7 +194,10 @@ export default function StockPage({ onBack, onNavigate }: Props) {
               {selectedGroup ? `${selectedGroup} (স্টক)` : 'স্টকের হিসাব'}
             </h1>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-1.5">
+            <button onClick={() => onNavigate('purchase')} className="flex items-center gap-1 px-2.5 py-1.5 border border-white/30 rounded-lg text-xs font-bold bg-da-depotBlue hover:bg-da-depotBlue/80 transition">
+              <Plus size={14} /> স্টক ইন
+            </button>
             <button onClick={() => onNavigate('purchase_khata')} className="flex items-center gap-1 px-2.5 py-1.5 border border-white/30 rounded-lg text-xs font-bold bg-white/10 hover:bg-white/20 transition">
               <Clock size={14} /> ইতিহাস
             </button>
@@ -282,33 +285,35 @@ export default function StockPage({ onBack, onNavigate }: Props) {
 
             {/* লিস্ট ভিউ (এবং ফিল্টার হওয়া লিস্ট) */}
             {(viewMode === 'list' || selectedGroup) && (
-              <div className="flex flex-col gap-2 mt-1">
+              <div className="flex flex-col gap-1.5 mt-1">
                 {filteredProducts.length === 0 ? (
-                  <div className="border-2 border-dashed border-da-cardBorder rounded-xl p-8 flex flex-col items-center justify-center text-center bg-white/50">
-                    <Package size={32} className="text-da-textMuted mb-2"/>
-                    <p className="text-sm text-da-textMuted font-bold">কোনো পণ্য পাওয়া যায়নি</p>
+                  <div className="border-2 border-dashed border-da-cardBorder rounded-lg p-6 flex flex-col items-center justify-center text-center bg-white/50">
+                    <Package size={28} className="text-da-textMuted mb-2"/>
+                    <p className="text-xs text-da-textMuted font-bold">কোনো পণ্য পাওয়া যায়নি</p>
                   </div>
                 ) : (
                   filteredProducts.map(item => (
-                    <div key={item.id} className="bg-white p-3 rounded-xl border border-da-cardBorder shadow-sm flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform" onClick={() => handleOpenUpdate(item)}>
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-10 h-10 bg-da-depotBg rounded-lg flex items-center justify-center shrink-0 border border-da-cardBorder overflow-hidden">
+                    <div key={item.id} className="bg-white px-2.5 py-1.5 rounded-lg border border-da-cardBorder shadow-sm flex items-center justify-between cursor-pointer active:scale-[0.98] transition-transform" onClick={() => handleOpenUpdate(item)}>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-8 h-8 bg-da-depotBg rounded-md flex items-center justify-center shrink-0 border border-da-cardBorder overflow-hidden">
                           {item.image_url ? (
                             <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
                           ) : (
-                            <Package size={20} className="text-da-depotBlue" />
+                            <Package size={16} className="text-da-depotBlue" />
                           )}
                         </div>
                         <div className="min-w-0">
-                          <h3 className="font-bold text-sm text-da-textDark truncate">{item.name}</h3>
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            <span className="text-[9px] font-bold text-da-teal bg-da-teal/10 px-1.5 py-0.5 rounded border border-da-teal/20">{item.category}</span>
-                            <span className="text-[9px] font-bold text-da-depotBlue bg-da-depotBlue/10 px-1.5 py-0.5 rounded border border-da-depotBlue/20">{item.company}</span>
+                          <h3 className="font-bold text-[12px] text-da-textDark truncate">{item.name}</h3>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="text-[8px] font-bold text-da-teal bg-da-teal/10 px-1 rounded border border-da-teal/20 whitespace-nowrap truncate max-w-[60px]">{item.category}</span>
+                            <span className="text-[8px] font-bold text-da-depotBlue bg-da-depotBlue/10 px-1 rounded border border-da-depotBlue/20 whitespace-nowrap truncate max-w-[60px]">{item.company}</span>
+                            <span className="text-[9px] text-da-textMuted font-bold ml-1 whitespace-nowrap">স্টক: {toBangla(item.stock_quantity)}</span>
                           </div>
-                          <p className="text-[10px] text-da-textMuted font-bold mt-1">স্টক: {toBangla(item.stock_quantity)}</p>
                         </div>
                       </div>
-                      <div className="font-black text-sm text-da-textDark shrink-0">৳{toBangla(item.stock_quantity * item.purchase_price)}</div>
+                      <div className="font-black text-[13px] text-da-textDark shrink-0 pl-2">
+                        ৳{toBangla(item.stock_quantity * item.purchase_price)}
+                      </div>
                     </div>
                   ))
                 )}

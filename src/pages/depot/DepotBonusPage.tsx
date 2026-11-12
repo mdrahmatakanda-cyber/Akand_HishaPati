@@ -35,6 +35,7 @@ export default function DepotBonusPage({ onBack }: Props) {
   const [bonusDate, setBonusDate] = useState(new Date().toISOString().split('T')[0]);
   const [note, setNote] = useState('');
   const [cart, setCart] = useState<any[]>([]);
+  const [productSearchQuery, setProductSearchQuery] = useState('');
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -119,6 +120,7 @@ export default function DepotBonusPage({ onBack }: Props) {
       setSelectedCompany('');
       setNote('');
       setCart([]);
+      setProductSearchQuery(''); // সার্চ ক্লিয়ার
       setBonusDate(new Date().toISOString().split('T')[0]);
     } catch (error: any) {
       alert("সমস্যা: " + error.message);
@@ -183,16 +185,15 @@ export default function DepotBonusPage({ onBack }: Props) {
         )}
       </main>
 
-      {/* Add Bonus Modal */}
+      {/* Add Bonus Modal (Full Screen) */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90dvh] flex flex-col">
-            <div className="bg-da-depotNavy p-3 flex justify-between items-center text-white shrink-0">
-              <h2 className="font-bold text-sm flex items-center gap-2"><Gift size={16}/> নতুন বোনাস এন্ট্রি</h2>
-              <button onClick={() => setIsAddModalOpen(false)} className="p-1 bg-white/20 rounded-full"><X size={16}/></button>
-            </div>
-            
-            <div className="p-4 flex flex-col gap-3 overflow-y-auto">
+        <div className="fixed inset-0 bg-da-depotBg z-[100] flex flex-col w-full">
+          <div className="bg-da-depotNavy p-3 flex justify-between items-center text-white shrink-0 shadow-md">
+            <h2 className="font-bold text-base flex items-center gap-2"><Gift size={20}/> নতুন বোনাস এন্ট্রি</h2>
+            <button onClick={() => setIsAddModalOpen(false)} className="p-1.5 bg-white/20 rounded-full"><X size={20}/></button>
+          </div>
+          
+          <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-[11px] font-bold text-da-textMuted mb-1 block">কোম্পানি *</label>
@@ -209,9 +210,16 @@ export default function DepotBonusPage({ onBack }: Props) {
 
               <div>
                 <label className="text-[11px] font-bold text-da-textMuted mb-1 block">পণ্য নির্বাচন করুন</label>
-                <div className="grid grid-cols-2 gap-2 max-h-40 overflow-y-auto p-1">
-                  {products.map(p => (
-                    <div key={p.id} onClick={() => handleAddToCart(p)} className="bg-da-depotBg border border-da-cardBorder rounded-lg p-2 flex items-center justify-between cursor-pointer active:scale-95 transition">
+                
+                {/* সার্চ বার */}
+                <div className="bg-white border border-da-cardBorder rounded-lg px-2.5 py-2 flex items-center gap-2 shadow-sm focus-within:border-da-depotBlue mb-2">
+                  <Search size={16} className="text-da-textMuted" />
+                  <input type="text" placeholder="পণ্য খুঁজুন..." value={productSearchQuery} onChange={e => setProductSearchQuery(e.target.value)} className="w-full outline-none text-xs bg-transparent" />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 p-1">
+                  {products.filter(p => p.name.toLowerCase().includes(productSearchQuery.toLowerCase())).map(p => (
+                    <div key={p.id} onClick={() => handleAddToCart(p)} className="bg-white border border-da-cardBorder rounded-lg p-2 flex items-center justify-between cursor-pointer active:scale-95 transition shadow-sm">
                       <div className="min-w-0 pr-1">
                         <h4 className="text-[11px] font-bold text-da-textDark truncate">{p.name}</h4>
                         <span className="text-[9px] text-da-textMuted">স্টক: {toBangla(p.stock_quantity || p.stock)}</span>

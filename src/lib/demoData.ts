@@ -77,7 +77,10 @@ export const demoExpenses = [
 export const demoDepotStats = {
   stockValue: 155000,
   marketDue: 45000,
-  companyPayable: 35000
+  companyPayable: 35000,
+  todaySale: 12500,
+  todayExpense: 2500,
+  todayProfit: 10000
 };
 
 export const demoSuppliers = [
@@ -112,3 +115,38 @@ export const demoReportRawData = {
     { id: 's1', name: 'ভাই ভাই এগ্রো', due_balance: 5000, phone: '01811000001' }
   ]
 };
+
+export const demoDepotDealers = [
+  { id: 'd1', dealer_code: 'DLR-001', name: "ভাই ভাই এগ্রো", phone: "01711000001", area: "গাজীপুর", due_balance: 15000, previous_due: 20000, image_url: '', documents: [] },
+  { id: 'd2', dealer_code: 'DLR-002', name: "মোল্লা পোল্ট্রি", phone: "01711000002", area: "সাভার", due_balance: 8000, previous_due: 8000, image_url: '', documents: [] },
+];
+
+export const demoOfficers = [
+  { 
+    id: 'o1', name: "রফিকুল ইসলাম", phone: "01911000001", area: "উত্তর বাজার", 
+    target_amount: 100000, commission_rate: 5, commission_type: 'Officer Commission',
+    status: 'Active', role: 'Default Officer', van_stock_value: 45000, cash_in_hand: 12000, 
+    image_url: '', documents: [] 
+  },
+  { 
+    id: 'o2', name: "সজীব আহমেদ", phone: "01911000002", area: "দক্ষিণ বাজার", 
+    target_amount: 80000, commission_rate: 4, commission_type: 'Fixed',
+    status: 'Inactive', role: 'Default Officer', van_stock_value: 38000, cash_in_hand: 8500, 
+    image_url: '', documents: [] 
+  },
+];
+
+export const demoInternalTransfers = [
+  {
+    id: 'TR-1001',
+    source_depot: "কেন্দ্রীয় গুদাম",
+    destination_depot: "গাজীপুর ডিপো",
+    vehicle_no: "ঢাকা-ট ১১-১২৩৪",
+    date: "০৭ নভেম্বর, ২০২৬",
+    status: 'In-Transit',
+    items: [
+      { id: 'p1', name: "গ্রোয়ার ফিড (২৫ কেজি)", quantity: 50, unit: "বস্তা" },
+      { id: 'p2', name: "রুই পোনা খাদ্য (১০ কেজি)", quantity: 20, unit: "ব্যাগ" }
+    ]
+  }
+];

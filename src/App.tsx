@@ -1,7 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { WifiOff, LogOut, X, AlertTriangle, Loader2 } from 'lucide-react';
 import DashboardPage from './pages/DashboardPage';
-import DepotDashboardPage from './pages/DepotDashboardPage';
+import DepotDashboardPage from './pages/depot/DepotDashboardPage';
+import DepotStockPage from './pages/depot/DepotStockPage';
+import DepotDealerPage from './pages/depot/DepotDealerPage';
+import DepotOfficerPage from './pages/depot/DepotOfficerPage';
+import DepotTransferPage from './pages/depot/DepotTransferPage';
 import {
   PurchasePage, SalePage,
   PurchaseKhataPage, SaleKhataPage, DueKhataPage, ExpenseKhataPage,
@@ -211,12 +215,29 @@ function AppContent() {
 
     if (currentScreen === 'contacts') return <ContactsPage onBack={goBack} />;
     if (currentScreen === 'product_list') return <ProductListPage onBack={goBack} />;
-    if (currentScreen === 'stock') return <StockPage onBack={goBack} onNavigate={navigateTo} />;
+    if (currentScreen === 'stock') {
+      return currentMode === 'depot' 
+        ? <DepotStockPage onBack={goBack} onNavigate={navigateTo} />
+        : <StockPage onBack={goBack} onNavigate={navigateTo} />;
+    }
+
+    if (currentScreen === 'market') {
+      return currentMode === 'depot'
+        ? <DepotDealerPage onBack={goBack} onNavigate={navigateTo} />
+        : <MarketPage onBack={goBack} />;
+    }
     if (currentScreen === 'reports') return <ReportsPage onBack={goBack} onNavigate={navigateTo} />;
 
-    if (currentScreen === 'depot') return <DepotPage onBack={goBack} />;
-    if (currentScreen === 'sr') return <SrPage onBack={goBack} />;
-    if (currentScreen === 'market') return <MarketPage onBack={goBack} />;
+    if (currentScreen === 'depot') {
+      return currentMode === 'depot'
+        ? <DepotTransferPage onBack={goBack} onNavigate={navigateTo} />
+        : <DepotPage onBack={goBack} />;
+    }
+    if (currentScreen === 'sr') {
+      return currentMode === 'depot' 
+        ? <DepotOfficerPage onBack={goBack} onNavigate={navigateTo} />
+        : <SrPage onBack={goBack} />;
+    }
     if (currentScreen === 'company') return <CompanyPage onBack={goBack} />;
 
     if (currentScreen === 'cashbox') return <CashboxPage onBack={goBack} />;

@@ -29,6 +29,7 @@ interface DashboardProps {
   onNavigate: (screen: string) => void;
   currentMode: 'shop' | 'depot' | 'general';
   modeConfig: any;
+  onToggleMode: () => void;
 }
 
 // রঙ গাঢ় করার সহায়ক ফাংশন
@@ -40,20 +41,18 @@ function shade(hex: string, amount: number): string {
   return `rgb(${r}, ${g}, ${b})`;
 }
 
-export default function DashboardPage({ onNavigate, currentMode, modeConfig }: DashboardProps) {
+export default function DashboardPage({ onNavigate, currentMode, modeConfig, onToggleMode }: DashboardProps) {
   const { isDemoMode } = useAppContext();
   const { activeBusiness } = useAuth();
 
   const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>('TODAY');
   const [selectedNavIndex, setSelectedNavIndex] = useState(0);
   const [currentSlide, setCurrentSlide] = useState<number>(0);
-  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [isQuickActionOpen, setIsQuickActionOpen] = useState<boolean>(false);
   
   // ডাটা স্টেট
   const [dashboardStats, setDashboardStats] = useState<any>(null);
   const [isDataLoading, setIsDataLoading] = useState<boolean>(true);
-  const [unreadCount, setUnreadCount] = useState<number>(2);
 
   const mainRef = useRef<HTMLElement>(null);
 
@@ -110,7 +109,6 @@ export default function DashboardPage({ onNavigate, currentMode, modeConfig }: D
           await new Promise(resolve => setTimeout(resolve, 300)); // সিমুলেট লোডিং
           const demoData = demoDashboardStats[selectedPeriod];
           setDashboardStats(demoData);
-          setUnreadCount(demoData.unread_inbox);
         } else {
           // রিয়েল মোড: Supabase RPC কল
           const { data, error } = await supabase.rpc('get_dashboard_stats', {
@@ -119,9 +117,6 @@ export default function DashboardPage({ onNavigate, currentMode, modeConfig }: D
           });
           if (error) throw error;
           setDashboardStats(data);
-          if (data?.unread_inbox !== undefined) {
-            setUnreadCount(data.unread_inbox);
-          }
         }
       } catch (error) {
         console.error("Dashboard data fetch error:", error);
@@ -132,11 +127,6 @@ export default function DashboardPage({ onNavigate, currentMode, modeConfig }: D
 
     fetchStats();
   }, [isDemoMode, selectedPeriod, activeBusiness?.id]);
-
-  const handleRefresh = () => {
-    setIsRefreshing(true);
-    setTimeout(() => setIsRefreshing(false), 800);
-  };
 
   const isSectionVisible = (sectionKey: string) => {
     if (!modeConfig[sectionKey]) return true;
@@ -190,14 +180,15 @@ export default function DashboardPage({ onNavigate, currentMode, modeConfig }: D
             </div>
           </div>
 
+          {/* ৩টি আইকন: মোড, সাহায্য, ইনবক্স */}
           <div className="flex items-center gap-3.5">
-            <button onClick={handleRefresh} className="flex flex-col items-center text-white/90 hover:text-white transition cursor-pointer group">
+            <button onClick={onToggleMode} className="flex flex-col items-center text-white/90 hover:text-white transition cursor-pointer group">
               <span className="w-[30px] h-[30px] rounded-xl bg-white/10 ring-1 ring-white/20 backdrop-blur-sm flex items-center justify-center group-active:scale-90 transition">
-                <RefreshCcw size={18} className={`drop-shadow-sm group-hover:scale-110 transition-transform ${isRefreshing ? "animate-spin text-cyan-300" : ""}`} />
+                <RefreshCcw size={18} className="drop-shadow-sm group-hover:scale-110 transition-transform" />
               </span>
-              <span className="text-[9px] font-medium mt-0.5 drop-shadow-sm">সিঙ্ক</span>
+              <span className="text-[9px] font-medium mt-0.5 drop-shadow-sm">{currentMode === 'depot' ? 'দোকান' : 'ডিপো'}</span>
             </button>
-            
+
             <button onClick={() => onNavigate('help')} className="flex flex-col items-center text-white/90 hover:text-white transition cursor-pointer group">
               <span className="w-[30px] h-[30px] rounded-xl bg-white/10 ring-1 ring-white/20 backdrop-blur-sm flex items-center justify-center group-active:scale-90 transition">
                 <Headset size={18} className="drop-shadow-sm group-hover:scale-110 transition-transform" />
@@ -206,19 +197,11 @@ export default function DashboardPage({ onNavigate, currentMode, modeConfig }: D
             </button>
             
             <div 
-              onClick={() => { 
-                onNavigate('inbox'); 
-                setUnreadCount(0);
-              }} 
+              onClick={() => onNavigate('inbox')} 
               className="relative flex flex-col items-center cursor-pointer text-white/90 hover:text-white transition group"
             >
               <span className="relative w-[30px] h-[30px] rounded-xl bg-white/10 ring-1 ring-white/20 backdrop-blur-sm flex items-center justify-center group-active:scale-90 transition">
                 <Mail size={18} className="drop-shadow-sm group-hover:scale-110 transition-transform" />
-                {unreadCount > 0 && (
-                  <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-gradient-to-br from-[#FF5252] to-[#D32F2F] ring-2 ring-[#07465B] text-white rounded-full text-[8px] font-bold flex items-center justify-center shadow-md">
-                    {toBangla(unreadCount)}
-                  </span>
-                )}
               </span>
               <span className="text-[9px] font-medium mt-0.5 drop-shadow-sm">ইনবক্স</span>
             </div>
@@ -287,7 +270,7 @@ export default function DashboardPage({ onNavigate, currentMode, modeConfig }: D
               <span className="text-[10px] text-[#334155] font-bold mb-1 whitespace-nowrap text-center w-full">{prefix} বাকি</span>
               <div className="flex flex-row w-full gap-1">
                 <div className="flex-1 bg-[#D5EFDB] text-[#15803D] font-bold text-[9px] py-0.5 rounded-md text-center whitespace-nowrap ring-1 ring-[#B4DFBF]">
-                  দেয়েছি: {toBangla(isDataLoading ? "..." : formatTaka(dashboardStats?.due_received || 0))}
+                  দিয়েছি: {toBangla(isDataLoading ? "..." : formatTaka(dashboardStats?.due_received || 0))}
                 </div>
                 <div className="flex-1 bg-[#FDDCDC] text-[#B91C1C] font-bold text-[9px] py-0.5 rounded-md text-center whitespace-nowrap ring-1 ring-[#F6BDBD]">
                   নিয়েছি: {toBangla(isDataLoading ? "..." : formatTaka(dashboardStats?.due_given || 0))}

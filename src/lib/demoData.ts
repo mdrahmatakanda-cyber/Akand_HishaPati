@@ -74,6 +74,12 @@ export const demoExpenses = [
   { id: '3', reason: 'কর্মচারী বেতন', amount: 15000, date: '05 Nov 2026', rawDate: new Date('2026-11-05').getTime(), note: '' }
 ];
 
+export const demoDepotStats = {
+  stockValue: 155000,
+  marketDue: 45000,
+  companyPayable: 35000
+};
+
 export const demoSuppliers = [
   { id: 's1', name: 'মোল্লা পোল্ট্রি', phone: '01811223344', address: 'সাভার' },
   { id: 's2', name: 'ভাই ভাই এগ্রো', phone: '01711223344', address: 'গাজীপুর' }

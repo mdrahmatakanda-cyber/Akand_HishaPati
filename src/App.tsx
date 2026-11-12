@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { WifiOff, LogOut, X, AlertTriangle, Loader2 } from 'lucide-react';
 import DashboardPage from './pages/DashboardPage';
+import DepotDashboardPage from './pages/DepotDashboardPage';
 import {
   PurchasePage, SalePage,
   PurchaseKhataPage, SaleKhataPage, DueKhataPage, ExpenseKhataPage,
@@ -48,13 +49,21 @@ const defaultModeConfig: ModeConfig = {
 };
 
 function AppContent() {
-  // এখানে activeBusiness ব্যবহার করা হলো
-  const { user, activeBusiness, isLoading } = useAuth();
+  const { user, activeBusiness, isLoading, businesses, switchBusiness } = useAuth();
 
   const [currentScreen, setCurrentScreen] = useState<ScreenKey>('dashboard');
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
   const [showExitModal, setShowExitModal] = useState<boolean>(false);
-  const [currentMode, setCurrentMode] = useState<BusinessMode>('general');
+  
+  const [currentMode, setCurrentMode] = useState<BusinessMode>(() => {
+    const savedMode = localStorage.getItem('appMode');
+    return (savedMode as BusinessMode) || 'general';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('appMode', currentMode);
+  }, [currentMode]);
+
   const [modeConfig, setModeConfig] = useState<ModeConfig>(defaultModeConfig);
   const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
 
@@ -77,6 +86,18 @@ function AppContent() {
       window.removeEventListener('offline', handleOffline);
     };
   }, []);
+
+  const handleToggleMode = async () => {
+    if (currentMode === 'depot') {
+      const shopBiz = businesses.find(b => b.type === 'shop');
+      if (shopBiz) await switchBusiness(shopBiz.id);
+      setCurrentMode('shop');
+    } else {
+      const depotBiz = businesses.find(b => b.type === 'depot');
+      if (depotBiz) await switchBusiness(depotBiz.id);
+      setCurrentMode('depot');
+    }
+  };
 
   const navigateTo = (screen: string, id?: string) => {
     if (screen === currentScreen) return;
@@ -137,7 +158,6 @@ function AppContent() {
 
   if (!user) return <AuthPage />;
   
-  // এখানে activeBusiness চেক করা হলো
   if (user && !activeBusiness) return <SetupBusinessPage />;
 
   const renderScreen = () => {
@@ -150,7 +170,11 @@ function AppContent() {
               <span>আপনি বর্তমানে <strong>অফলাইনে</strong> আছেন। সব হিসাব দেখা যাবে, তবে নতুন কোনো তথ্য সেভ হবে না।</span>
             </div>
           )}
-          <DashboardPage onNavigate={navigateTo} currentMode={currentMode} modeConfig={modeConfig} />
+          {currentMode === 'depot' ? (
+            <DepotDashboardPage onNavigate={navigateTo} onToggleMode={handleToggleMode} />
+          ) : (
+            <DashboardPage onNavigate={navigateTo} currentMode={currentMode} modeConfig={modeConfig} onToggleMode={handleToggleMode} />
+          )}
         </>
       );
     }

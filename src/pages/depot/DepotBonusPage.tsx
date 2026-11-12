@@ -120,7 +120,7 @@ export default function DepotBonusPage({ onBack }: Props) {
       setSelectedCompany('');
       setNote('');
       setCart([]);
-      setProductSearchQuery(''); // সার্চ ক্লিয়ার
+      setProductSearchQuery('');
       setBonusDate(new Date().toISOString().split('T')[0]);
     } catch (error: any) {
       alert("সমস্যা: " + error.message);
@@ -187,77 +187,74 @@ export default function DepotBonusPage({ onBack }: Props) {
 
       {/* Add Bonus Modal (Full Screen) */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 bg-da-depotBg z-[100] flex flex-col w-full">
+        <div className="fixed inset-0 bg-da-depotBg z-[100] flex flex-col w-full animate-in slide-in-from-bottom duration-300">
           <div className="bg-da-depotNavy p-3 flex justify-between items-center text-white shrink-0 shadow-md">
             <h2 className="font-bold text-base flex items-center gap-2"><Gift size={20}/> নতুন বোনাস এন্ট্রি</h2>
             <button onClick={() => setIsAddModalOpen(false)} className="p-1.5 bg-white/20 rounded-full"><X size={20}/></button>
           </div>
           
           <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[11px] font-bold text-da-textMuted mb-1 block">কোম্পানি *</label>
-                  <select value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue">
-                    <option value="">সিলেক্ট করুন</option>
-                    {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-da-textMuted mb-1 block">তারিখ</label>
-                  <input type="date" value={bonusDate} onChange={e => setBonusDate(e.target.value)} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" />
-                </div>
-              </div>
-
+            <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="text-[11px] font-bold text-da-textMuted mb-1 block">পণ্য নির্বাচন করুন</label>
-                
-                {/* সার্চ বার */}
-                <div className="bg-white border border-da-cardBorder rounded-lg px-2.5 py-2 flex items-center gap-2 shadow-sm focus-within:border-da-depotBlue mb-2">
-                  <Search size={16} className="text-da-textMuted" />
-                  <input type="text" placeholder="পণ্য খুঁজুন..." value={productSearchQuery} onChange={e => setProductSearchQuery(e.target.value)} className="w-full outline-none text-xs bg-transparent" />
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 p-1">
-                  {products.filter(p => p.name.toLowerCase().includes(productSearchQuery.toLowerCase())).map(p => (
-                    <div key={p.id} onClick={() => handleAddToCart(p)} className="bg-white border border-da-cardBorder rounded-lg p-2 flex items-center justify-between cursor-pointer active:scale-95 transition shadow-sm">
-                      <div className="min-w-0 pr-1">
-                        <h4 className="text-[11px] font-bold text-da-textDark truncate">{p.name}</h4>
-                        <span className="text-[9px] text-da-textMuted">স্টক: {toBangla(p.stock_quantity || p.stock)}</span>
-                      </div>
-                      <span className="text-[10px] bg-da-depotBlue/10 text-da-depotBlue px-1.5 py-0.5 rounded font-bold shrink-0">+</span>
-                    </div>
-                  ))}
-                </div>
+                <label className="text-[11px] font-bold text-da-textMuted mb-1 block">কোম্পানি *</label>
+                <select value={selectedCompany} onChange={e => setSelectedCompany(e.target.value)} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue bg-white">
+                  <option value="">সিলেক্ট করুন</option>
+                  {companies.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
               </div>
-
-              {/* Cart */}
-              {cart.length > 0 && (
-                <div className="border border-da-cardBorder rounded-lg overflow-hidden">
-                  <div className="bg-da-depotBg p-2 text-[10px] font-bold text-da-textMuted border-b border-da-cardBorder">সিলেক্টেড পণ্য</div>
-                  {cart.map((item, idx) => (
-                    <div key={idx} className="flex justify-between items-center p-2 border-b border-da-cardBorder last:border-0 text-xs">
-                      <span className="font-bold text-da-textDark truncate">{item.name}</span>
-                      <div className="flex items-center gap-2">
-                        <input type="number" min="1" value={item.qty} onChange={e => setCart(cart.map(c => c.id === item.id ? { ...c, qty: parseInt(e.target.value) || 1 } : c))} className="w-10 text-center border border-da-cardBorder rounded py-1 outline-none" />
-                        <button onClick={() => setCart(cart.filter(c => c.id !== item.id))} className="text-da-red"><Trash2 size={12}/></button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
               <div>
-                <label className="text-[11px] font-bold text-da-textMuted mb-1 block">নোট (ঐচ্ছিক)</label>
-                <input type="text" value={note} onChange={e => setNote(e.target.value)} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" placeholder="যেমন: গাড়িপ্রতি ১০ বস্তা ফ্রি" />
+                <label className="text-[11px] font-bold text-da-textMuted mb-1 block">তারিখ</label>
+                <input type="date" value={bonusDate} onChange={e => setBonusDate(e.target.value)} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue bg-white" />
               </div>
             </div>
 
-            <div className="p-3 border-t border-da-cardBorder bg-da-depotBg flex gap-2 shrink-0">
-              <button onClick={() => setIsAddModalOpen(false)} className="flex-1 bg-white border border-da-cardBorder text-da-textMuted py-2 rounded-xl font-bold">বাতিল</button>
-              <button onClick={handleSave} disabled={isSaving} className="flex-1 bg-da-depotBlue text-white py-2 rounded-xl font-bold shadow-md flex justify-center items-center">
-                {isSaving ? <Loader2 size={16} className="animate-spin"/> : 'সেভ করুন'}
-              </button>
+            <div>
+              <label className="text-[11px] font-bold text-da-textMuted mb-1 block">পণ্য নির্বাচন করুন</label>
+              
+              <div className="bg-white border border-da-cardBorder rounded-lg px-2.5 py-2 flex items-center gap-2 shadow-sm focus-within:border-da-depotBlue mb-2">
+                <Search size={16} className="text-da-textMuted" />
+                <input type="text" placeholder="পণ্য খুঁজুন..." value={productSearchQuery} onChange={e => setProductSearchQuery(e.target.value)} className="w-full outline-none text-xs bg-transparent" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 p-1">
+                {products.filter(p => p.name.toLowerCase().includes(productSearchQuery.toLowerCase())).map(p => (
+                  <div key={p.id} onClick={() => handleAddToCart(p)} className="bg-white border border-da-cardBorder rounded-lg p-2 flex items-center justify-between cursor-pointer active:scale-95 transition shadow-sm">
+                    <div className="min-w-0 pr-1">
+                      <h4 className="text-[11px] font-bold text-da-textDark truncate">{p.name}</h4>
+                      <span className="text-[9px] text-da-textMuted">স্টক: {toBangla(p.stock_quantity || p.stock)}</span>
+                    </div>
+                    <span className="text-[10px] bg-da-depotBlue/10 text-da-depotBlue px-1.5 py-0.5 rounded font-bold shrink-0">+</span>
+                  </div>
+                ))}
+              </div>
             </div>
+
+            {cart.length > 0 && (
+              <div className="border border-da-cardBorder rounded-lg overflow-hidden bg-white mt-2">
+                <div className="bg-da-depotBg p-2 text-[10px] font-bold text-da-textMuted border-b border-da-cardBorder">সিলেক্টেড পণ্য</div>
+                {cart.map((item, idx) => (
+                  <div key={idx} className="flex justify-between items-center p-2 border-b border-da-cardBorder last:border-0 text-xs">
+                    <span className="font-bold text-da-textDark truncate">{item.name}</span>
+                    <div className="flex items-center gap-2">
+                      <input type="number" min="1" value={item.qty} onChange={e => setCart(cart.map(c => c.id === item.id ? { ...c, qty: parseInt(e.target.value) || 1 } : c))} className="w-10 text-center border border-da-cardBorder rounded py-1 outline-none" />
+                      <button onClick={() => setCart(cart.filter(c => c.id !== item.id))} className="text-da-red"><Trash2 size={14}/></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-1">
+              <label className="text-[11px] font-bold text-da-textMuted mb-1 block">নোট (ঐচ্ছিক)</label>
+              <input type="text" value={note} onChange={e => setNote(e.target.value)} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue bg-white" placeholder="যেমন: গাড়িপ্রতি ১০ বস্তা ফ্রি" />
+            </div>
+          </div>
+
+          <div className="p-3 border-t border-da-cardBorder bg-white flex gap-2 shrink-0">
+            <button onClick={() => setIsAddModalOpen(false)} className="flex-1 bg-da-depotBg border border-da-cardBorder text-da-textMuted py-2.5 rounded-xl font-bold">বাতিল</button>
+            <button onClick={handleSave} disabled={isSaving} className="flex-1 bg-da-depotBlue text-white py-2.5 rounded-xl font-bold shadow-md flex justify-center items-center">
+              {isSaving ? <Loader2 size={16} className="animate-spin"/> : 'সেভ করুন'}
+            </button>
           </div>
         </div>
       )}

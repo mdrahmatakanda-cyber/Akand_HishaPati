@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { 
   // হেডার
-  RefreshCcw, Headset, Mail, Scale, Store,
+  Headset, Mail, Scale, Store,
   // সামারি কার্ড
   Warehouse, HandCoins, Building2, 
   // ডিপো অপারেশনস
@@ -32,7 +32,7 @@ function shade(hex: string, amount: number): string {
 }
 
 export default function DepotDashboardPage({ onNavigate, onToggleMode }: Props) {
-  const { isDemoMode, toggleDemoMode } = useAppContext();
+  const { isDemoMode } = useAppContext();
   const { activeBusiness } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [stats, setStats] = useState({ stockValue: 0, marketDue: 0, companyPayable: 0 });

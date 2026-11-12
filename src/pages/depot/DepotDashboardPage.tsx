@@ -29,9 +29,11 @@ export default function DepotDashboardPage({ onNavigate, onToggleMode }: Props) 
   const { isDemoMode } = useAppContext();
   const { activeBusiness } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedPeriod, setSelectedPeriod] = useState<'TODAY' | 'WEEK' | 'MONTH'>('TODAY');
+  
   const [stats, setStats] = useState({ 
     stockValue: 0, marketDue: 0, companyPayable: 0, 
-    todaySale: 0, todayExpense: 0, todayProfit: 0 
+    periodSale: 0, periodExpense: 0 
   });
 
   useEffect(() => {
@@ -39,19 +41,31 @@ export default function DepotDashboardPage({ onNavigate, onToggleMode }: Props) 
       setIsLoading(true);
       try {
         if (isDemoMode) {
-          setStats(demoDepotStats);
+          setStats({
+            stockValue: demoDepotStats.stockValue,
+            marketDue: demoDepotStats.marketDue,
+            companyPayable: demoDepotStats.companyPayable,
+            periodSale: selectedPeriod === 'TODAY' ? demoDepotStats.todaySale : selectedPeriod === 'WEEK' ? demoDepotStats.todaySale * 5 : demoDepotStats.todaySale * 20,
+            periodExpense: selectedPeriod === 'TODAY' ? demoDepotStats.todayExpense : selectedPeriod === 'WEEK' ? demoDepotStats.todayExpense * 4 : demoDepotStats.todayExpense * 15
+          });
         } else {
           if (!activeBusiness?.id) return;
           const bizId = activeBusiness.id;
-          const today = new Date().toISOString().split('T')[0];
+          
+          let startDate = new Date().toISOString().split('T')[0];
+          if (selectedPeriod === 'WEEK') {
+            startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+          } else if (selectedPeriod === 'MONTH') {
+            startDate = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+          }
 
           const [prodRes, custRes, dealRes, supRes, saleRes, expRes] = await Promise.all([
             supabase.from('products').select('stock_quantity, purchase_price').eq('business_id', bizId),
             supabase.from('customers').select('due_balance').eq('business_id', bizId),
             supabase.from('dealers').select('due_balance').eq('business_id', bizId),
             supabase.from('suppliers').select('due_balance').eq('business_id', bizId),
-            supabase.from('sales').select('total_amount').eq('business_id', bizId).gte('sale_date', today),
-            supabase.from('expenses').select('amount').eq('business_id', bizId).gte('date', today)
+            supabase.from('sales').select('total_amount').eq('business_id', bizId).gte('sale_date', startDate),
+            supabase.from('expenses').select('amount').eq('business_id', bizId).gte('date', startDate)
           ]);
 
           const stockVal = prodRes.data?.reduce((acc, curr) => acc + (Number(curr.stock_quantity) * Number(curr.purchase_price)), 0) || 0;
@@ -60,16 +74,15 @@ export default function DepotDashboardPage({ onNavigate, onToggleMode }: Props) 
           const dealDue = dealRes.data?.reduce((acc, curr) => acc + Number(curr.due_balance), 0) || 0;
           const supDue = supRes.data?.reduce((acc, curr) => acc + Number(curr.due_balance), 0) || 0;
 
-          const todaySale = saleRes.data?.reduce((acc, curr) => acc + Number(curr.total_amount), 0) || 0;
-          const todayExpense = expRes.data?.reduce((acc, curr) => acc + Number(curr.amount), 0) || 0;
+          const periodSale = saleRes.data?.reduce((acc, curr) => acc + Number(curr.total_amount), 0) || 0;
+          const periodExpense = expRes.data?.reduce((acc, curr) => acc + Number(curr.amount), 0) || 0;
 
           setStats({
             stockValue: stockVal,
             marketDue: custDue + dealDue,
             companyPayable: supDue,
-            todaySale,
-            todayExpense,
-            todayProfit: todaySale - todayExpense
+            periodSale,
+            periodExpense
           });
         }
       } catch (error) {
@@ -79,7 +92,7 @@ export default function DepotDashboardPage({ onNavigate, onToggleMode }: Props) 
       }
     };
     fetchDepotStats();
-  }, [isDemoMode, activeBusiness?.id]);
+  }, [isDemoMode, activeBusiness?.id, selectedPeriod]);
 
   return (
     <div className="h-[100dvh] bg-da-depotBg text-da-textDark font-serif flex flex-col overflow-hidden w-full relative">
@@ -117,15 +130,41 @@ export default function DepotDashboardPage({ onNavigate, onToggleMode }: Props) 
       {/* মেইন বডি */}
       <main className="flex-1 overflow-y-auto p-2.5 flex flex-col gap-2.5 pb-28 scrollbar-hide relative z-10">
         
-        {/* সামারি কার্ড (৬টি কমপ্যাক্ট) */}
-        <div className="grid grid-cols-3 gap-1.5 shrink-0">
-          <SummaryCard title="স্টক" icon={Warehouse} color="#1565C0" valueClass="text-da-depotBlue" cardClass="from-[#DDEAFB] to-white border-[#B7D2F4]" isLoading={isLoading} value={stats.stockValue} />
-          <SummaryCard title="পাওনা" icon={HandCoins} color="#D97706" valueClass="text-[#B45309]" cardClass="from-[#FDEFD0] to-white border-[#F5D69A]" isLoading={isLoading} value={stats.marketDue} />
-          <SummaryCard title="দেনা" icon={Building2} color="#D32F2F" valueClass="text-da-red" cardClass="from-[#FCE2E2] to-white border-[#F3BDBD]" isLoading={isLoading} value={stats.companyPayable} />
+        {/* দৈনিক / সাপ্তাহিক / মাসিক টগল */}
+        <div className="flex justify-between items-center bg-white border border-da-cardBorder rounded-xl p-1.5 shadow-sm shrink-0">
+          <span className="text-[11px] font-bold text-da-depotNavy pl-1">
+            {selectedPeriod === 'TODAY' ? 'আজকের' : selectedPeriod === 'WEEK' ? 'সাপ্তাহিক' : 'এই মাসের'} হিসাব
+          </span>
+          <div className="bg-da-depotBg p-0.5 rounded-lg flex items-center shadow-inner">
+            <button
+              onClick={() => setSelectedPeriod('TODAY')}
+              className={`px-3 py-1 text-[10px] rounded-md font-bold transition ${selectedPeriod === 'TODAY' ? 'bg-da-depotNavy text-white shadow-sm' : 'text-da-textMuted'}`}
+            >
+              দৈনিক
+            </button>
+            <button
+              onClick={() => setSelectedPeriod('WEEK')}
+              className={`px-3 py-1 text-[10px] rounded-md font-bold transition ${selectedPeriod === 'WEEK' ? 'bg-da-depotNavy text-white shadow-sm' : 'text-da-textMuted'}`}
+            >
+              সাপ্তাহিক
+            </button>
+            <button
+              onClick={() => setSelectedPeriod('MONTH')}
+              className={`px-3 py-1 text-[10px] rounded-md font-bold transition ${selectedPeriod === 'MONTH' ? 'bg-da-depotNavy text-white shadow-sm' : 'text-da-textMuted'}`}
+            >
+              মাসিক
+            </button>
+          </div>
+        </div>
+
+        {/* সামারি কার্ড (৫টি) */}
+        <div className="grid grid-cols-6 gap-1.5 shrink-0">
+          <div className="col-span-2"><SummaryCard title="স্টক" icon={Warehouse} color="#1565C0" valueClass="text-da-depotBlue" cardClass="from-[#DDEAFB] to-white border-[#B7D2F4]" isLoading={isLoading} value={stats.stockValue} /></div>
+          <div className="col-span-2"><SummaryCard title="পাওনা" icon={HandCoins} color="#D97706" valueClass="text-[#B45309]" cardClass="from-[#FDEFD0] to-white border-[#F5D69A]" isLoading={isLoading} value={stats.marketDue} /></div>
+          <div className="col-span-2"><SummaryCard title="দেনা" icon={Building2} color="#D32F2F" valueClass="text-da-red" cardClass="from-[#FCE2E2] to-white border-[#F3BDBD]" isLoading={isLoading} value={stats.companyPayable} /></div>
           
-          <SummaryCard title="আজকের বিক্রি" icon={ReceiptText} color="#2E7D32" valueClass="text-da-green" cardClass="from-[#DCFCE7] to-white border-[#86EFAC]" isLoading={isLoading} value={stats.todaySale} />
-          <SummaryCard title="আজকের খরচ" icon={Banknote} color="#B91C1C" valueClass="text-red-600" cardClass="from-[#FEE2E2] to-white border-[#FCA5A5]" isLoading={isLoading} value={stats.todayExpense} />
-          <SummaryCard title="আজকের লাভ" icon={BarChart3} color="#047857" valueClass="text-emerald-700" cardClass="from-[#D1FAE5] to-white border-[#6EE7B7]" isLoading={isLoading} value={stats.todayProfit} />
+          <div className="col-span-3"><SummaryCard title={`${selectedPeriod === 'TODAY' ? 'আজকের' : selectedPeriod === 'WEEK' ? 'সাপ্তাহিক' : 'এই মাসের'} বিক্রি`} icon={ReceiptText} color="#2E7D32" valueClass="text-da-green" cardClass="from-[#DCFCE7] to-white border-[#86EFAC]" isLoading={isLoading} value={stats.periodSale} /></div>
+          <div className="col-span-3"><SummaryCard title={`${selectedPeriod === 'TODAY' ? 'আজকের' : selectedPeriod === 'WEEK' ? 'সাপ্তাহিক' : 'এই মাসের'} খরচ`} icon={Banknote} color="#B91C1C" valueClass="text-red-600" cardClass="from-[#FEE2E2] to-white border-[#FCA5A5]" isLoading={isLoading} value={stats.periodExpense} /></div>
         </div>
 
         {/* মূল মডিউল গ্রিড (১৩টি) */}

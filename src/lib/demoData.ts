@@ -255,3 +255,47 @@ export const demoBonusEntries = [
     ]
   }
 ];
+
+// 🚀 রিসিপ্টের জন্য সম্পূর্ণ ডেমু ডেটা
+export const demoReceiptDefaults = {
+  shopDescription: 'প্রোপ্রাইটর্রি ও পরিবেশক: উন্নতমানের পোল্ট্রি, ফিশ ফিড ও এগ্রো সলিউশনস',
+  tableNote: '* ডেলিভারির সময় পণ্যের বস্তা ও ওজন সঠিকভাবে বুঝে নেওয়া হলো।',
+  footerText1: 'আমাদের সাথে ব্যবসা পরিচালনার জন্য ধন্যবাদ!',
+  footerText2: 'সফটওয়্যার তৈরিতে Akand Smart Solutions',
+  defaultNote: 'AGM Mob No: 01774401252 বিল পরিশোধ কোম্পানির কাছে।',
+  
+  // এসআর তথ্য
+  srName: 'মো: রহমতুল্লাহ আকন্দ',
+  srPhone: '০১৭১১২২৩৩৪৪',
+  
+  // গাড়ি ও ড্রাইভার তথ্য
+  vehicleNo: 'ঢাকা মেট্রো-ট ১১-৮৬২৩',
+  driverName: 'মো: মিজানুর ইসলাম',
+  driverPhone: '০১৭৫৫-৮০৬৯২০',
+  transportRent: 500,
+
+  // কথায় টাকা (ইন-ওয়ার্ডস)
+  inWords: 'দুই হাজার সাতশত নব্বই টাকা মাত্র',
+};
+
+// কাস্টমার ডেমু ডেটা (যদি আগের ফাইলে না থাকে তবে এগুলো ব্যবহার হবে)
+export const demoCustomersDetailed = [
+  { 
+    id: 'c1', 
+    name: 'AlHira poultry and fish feed', 
+    proprietor: 'Md. Amran Hossain', 
+    phone: '০১৭৩৩৩৮৮৮০৫', 
+    address: 'খানপাড়া, শ্রী মতি বাজার, হাজীপুর', 
+    market_name: 'বাজার: খানপাড়া, শ্রী মতি বাজার, হাজীপুর', 
+    due_balance: 15000 
+  },
+  { 
+    id: 'c2', 
+    name: 'মেসার্স ভাই ভাই এগ্রো', 
+    proprietor: 'আব্দুর রহিম', 
+    phone: '০১৮২২৩৩৪৪৫৫', 
+    address: 'নতুন বাজার, মিরপুর', 
+    market_name: 'বাজার: মিরপুর ১১', 
+    due_balance: 0 
+  }
+];

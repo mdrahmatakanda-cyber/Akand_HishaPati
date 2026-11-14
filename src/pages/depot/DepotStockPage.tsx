@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { 
   ArrowLeft, Search, Clock, 
-  X, ScanBarcode, Tag, Building2, Package, Loader2, List, Plus
+  X, ScanBarcode, Tag, Building2, Package, Loader2, List,
 } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { toBangla } from '../../lib/utils';
@@ -9,6 +9,7 @@ import { useAppContext } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { demoProducts } from '../../lib/demoData';
+
 interface Props {
   onBack: () => void;
   onNavigate: (screen: string) => void;
@@ -16,7 +17,7 @@ interface Props {
 
 type ViewMode = 'list' | 'category' | 'company';
 
-export default function StockPage({ onBack, onNavigate }: Props) {
+export default function DepotStockPage({ onBack, onNavigate }: Props) {
   const { isDemoMode } = useAppContext();
   const { activeBusiness } = useAuth();
 
@@ -106,7 +107,6 @@ export default function StockPage({ onBack, onNavigate }: Props) {
     };
   }, [isScannerOpen, products]);
 
-  // গ্রুপিং লজিক (ক্যাটাগরি এবং কোম্পানি)
   const categoryData = useMemo(() => {
     const map = new Map();
     products.forEach(p => {
@@ -133,7 +133,6 @@ export default function StockPage({ onBack, onNavigate }: Props) {
     return Array.from(map.values());
   }, [products]);
 
-  // লিস্ট ফিল্টারিং
   const filteredProducts = useMemo(() => {
     return products.filter(p => {
       const matchSearch = p.name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -183,7 +182,7 @@ export default function StockPage({ onBack, onNavigate }: Props) {
   };
 
   return (
-    <div className="h-[100dvh] bg-da-bg text-da-textDark font-serif flex flex-col overflow-hidden w-full relative">
+    <div className="h-[100dvh] bg-da-depotBg text-da-textDark font-serif flex flex-col overflow-hidden w-full relative">
       <header className="bg-da-depotNavy text-white shadow-md shrink-0 z-40">
         <div className="px-3 py-2.5 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -194,10 +193,7 @@ export default function StockPage({ onBack, onNavigate }: Props) {
               {selectedGroup ? `${selectedGroup} (স্টক)` : 'স্টকের হিসাব'}
             </h1>
           </div>
-          <div className="flex gap-1.5">
-            <button onClick={() => onNavigate('purchase')} className="flex items-center gap-1 px-2.5 py-1.5 border border-white/30 rounded-lg text-xs font-bold bg-da-depotBlue hover:bg-da-depotBlue/80 transition">
-              <Plus size={14} /> স্টক ইন
-            </button>
+          <div className="flex gap-2">
             <button onClick={() => onNavigate('purchase_khata')} className="flex items-center gap-1 px-2.5 py-1.5 border border-white/30 rounded-lg text-xs font-bold bg-white/10 hover:bg-white/20 transition">
               <Clock size={14} /> ইতিহাস
             </button>
@@ -207,7 +203,6 @@ export default function StockPage({ onBack, onNavigate }: Props) {
 
       <main className="flex-1 overflow-y-auto p-2.5 flex flex-col gap-2.5 pb-24">
         
-        {/* সামারি কার্ড */}
         <div className="bg-gradient-to-r from-da-depotNavy to-da-depotBlue text-white p-3 rounded-xl shadow-md flex justify-between items-center shrink-0">
           <div className="flex-1 text-center border-r border-white/20">
             <p className="text-xs font-bold text-blue-100">মোট মজুদ</p>
@@ -219,7 +214,6 @@ export default function StockPage({ onBack, onNavigate }: Props) {
           </div>
         </div>
 
-        {/* সার্চ ও ভিউ টগলার */}
         {!selectedGroup && (
           <div className="flex flex-col gap-2 shrink-0">
             <div className="bg-white border border-da-cardBorder rounded-xl px-3 py-2 flex items-center gap-2 shadow-sm focus-within:border-da-blue">
@@ -230,7 +224,6 @@ export default function StockPage({ onBack, onNavigate }: Props) {
               </button>
             </div>
 
-            {/* View Toggler */}
             <div className="bg-[#E1EBE6] p-0.5 rounded-lg flex items-center shadow-inner">
               <button onClick={() => setViewMode('list')} className={`flex-1 py-1.5 text-xs rounded-md font-bold transition flex items-center justify-center gap-1 ${viewMode === 'list' ? 'bg-white shadow-sm text-da-depotNavy' : 'text-da-textMuted'}`}>
                 <List size={14}/> লিস্ট
@@ -249,7 +242,6 @@ export default function StockPage({ onBack, onNavigate }: Props) {
           <div className="flex justify-center items-center mt-10"><Loader2 className="animate-spin text-da-depotBlue" size={32}/></div>
         ) : (
           <>
-            {/* ক্যাটাগরি বা কোম্পানি কার্ড ভিউ */}
             {!selectedGroup && viewMode !== 'list' && (
               <div className="grid grid-cols-2 gap-2 mt-1">
                 {(viewMode === 'category' ? categoryData : companyData).map((group, idx) => (
@@ -283,7 +275,6 @@ export default function StockPage({ onBack, onNavigate }: Props) {
               </div>
             )}
 
-            {/* লিস্ট ভিউ (এবং ফিল্টার হওয়া লিস্ট) */}
             {(viewMode === 'list' || selectedGroup) && (
               <div className="flex flex-col gap-1.5 mt-1">
                 {filteredProducts.length === 0 ? (
@@ -323,7 +314,6 @@ export default function StockPage({ onBack, onNavigate }: Props) {
         )}
       </main>
 
-      {/* বটম বার */}
       {!selectedGroup && (
         <div className="fixed bottom-0 left-0 w-full bg-white border-t border-da-cardBorder p-2.5 z-50 flex gap-2">
           <button onClick={() => onNavigate('product_list')} className="w-full bg-da-depotBlue text-white py-2.5 rounded-xl font-bold shadow-md active:scale-95 transition flex justify-center items-center gap-1">
@@ -332,7 +322,6 @@ export default function StockPage({ onBack, onNavigate }: Props) {
         </div>
       )}
 
-      {/* আপডেট স্টক মডাল */}
       {isUpdateModalOpen && selectedProduct && (
         <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
@@ -360,7 +349,6 @@ export default function StockPage({ onBack, onNavigate }: Props) {
         </div>
       )}
 
-      {/* স্ক্যানার মডাল */}
       {isScannerOpen && (
         <div className="fixed inset-0 bg-black/90 z-[100] flex flex-col items-center justify-center p-4 backdrop-blur-md">
           <div className="w-full max-w-sm flex flex-col items-center">

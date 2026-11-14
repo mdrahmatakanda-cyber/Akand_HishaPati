@@ -5,18 +5,20 @@ import DepotDashboardPage from './pages/depot/DepotDashboardPage';
 import DepotStockPage from './pages/depot/DepotStockPage';
 import DepotDealerPage from './pages/depot/DepotDealerPage';
 import DepotOfficerPage from './pages/depot/DepotOfficerPage';
-import DepotTransferPage from './pages/depot/DepotTransferPage';
 import DepotBonusPage from './pages/depot/DepotBonusPage';
 import DepotCompanyPage from './pages/depot/DepotCompanyPage';
 import DepotStockInPage from './pages/depot/DepotStockInPage';
 import DepotExpensePage from './pages/depot/DepotExpensePage';
 import DepotReportsPage from './pages/depot/DepotReportsPage';
 
+// ✅ IMPORTANT: এই লাইনটি ঠিক এভাবেই থাকতে হবে (ভুল করে components থেকে ইম্পোর্ট করবেন না)
+import DepotTransferPage from './pages/depot/DepotTransferPage'; 
+
 import {
   PurchasePage, SalePage,
   PurchaseKhataPage, SaleKhataPage, DueKhataPage, ExpenseKhataPage,
   ContactsPage, ProductListPage, StockPage, ReportsPage,
-  DepotPage, SrPage, MarketPage, CompanyPage,
+  SrPage, MarketPage, CompanyPage,
   CashboxPage, PartnersPage, MarketingPage, AppAccessPage,
   ExpiredPage, WarrantyPage, PrinterPage, RecycleBinPage
 } from './pages';
@@ -208,7 +210,7 @@ function AppContent() {
     if (currentScreen === 'purchase') {
       return currentMode === 'depot'
         ? <DepotStockInPage onBack={goBack} />
-        : <PurchasePage onBack={goBack} onNavigate={navigateTo} />;
+        : <PurchasePage onBack={goBack} />; 
     }
     if (currentScreen === 'sale') return <SalePage onBack={goBack} onNavigate={navigateTo} />;
 
@@ -246,10 +248,9 @@ function AppContent() {
         : <ReportsPage onBack={goBack} onNavigate={navigateTo} />;
     }
 
+    // ✅ এখানে কোনো এরর থাকার সুযোগ নেই, কারণ ইম্পোর্ট একদম ঠিক আছে
     if (currentScreen === 'depot') {
-      return currentMode === 'depot'
-        ? <DepotTransferPage onBack={goBack} onNavigate={navigateTo} />
-        : <DepotPage onBack={goBack} />;
+      return <DepotTransferPage onBack={goBack} />;
     }
 
     if (currentScreen === 'bonus') return <DepotBonusPage onBack={goBack} />;
@@ -288,7 +289,7 @@ function AppContent() {
               <h2 className="text-white font-bold text-lg text-center">বের হতে চান?</h2>
             </div>
             <div className="p-4 text-center">
-              <p className="text-sm text-gray-600 mb-5">আপনি কি সত্যিই <strong className="text-[#0B5C47]">Akand HishabPati</strong> অ্যাপ থেকে বের হতে চান?</p>
+              <p className="text-sm text-gray-600 mb-5">আপনি কি সত্যিই <strong className="text-[#0B5C47]">HishabPati</strong> অ্যাপ থেকে বের হতে চান?</p>
               <div className="flex gap-2 w-full">
                 <button onClick={() => setShowExitModal(false)} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-2.5 rounded-xl transition active:scale-95 text-sm">থাকুন</button>
                 <button onClick={handleConfirmExit} className="flex-1 bg-red-500 hover:bg-red-600 text-white font-bold py-2.5 rounded-xl transition active:scale-95 flex items-center justify-center gap-1.5 text-sm shadow-md shadow-red-500/30"><LogOut size={16} /> বের হোন</button>

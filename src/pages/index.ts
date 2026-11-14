@@ -8,7 +8,7 @@ export { default as ContactsPage } from './ContactsPage';
 export { default as ProductListPage } from './ProductListPage';
 export { default as StockPage } from './StockPage';
 export { default as ReportsPage } from './ReportsPage';
-export { default as DepotPage } from './DepotPage';
+
 export { default as SrPage } from './SrPage';
 export { default as MarketPage } from './MarketPage';
 export { default as CompanyPage } from './CompanyPage';

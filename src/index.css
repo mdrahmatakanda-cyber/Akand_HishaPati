@@ -9,3 +9,28 @@ body {
   margin: 0;
   padding: 0;
 }
+
+/* প্রিন্ট করার সময় শুধুমাত্র রিসিপ্ট অংশটুকু দেখানোর জন্য কাস্টম প্রিন্ট মিডিয়া রুল */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  
+  #printable-receipt,
+  #printable-receipt * {
+    visibility: visible;
+  }
+  
+  #printable-receipt {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 210mm;
+    min-height: 297mm;
+    margin: 0;
+    padding: 10mm;
+    border: none !important;
+    box-shadow: none !important;
+    background-color: white !important;
+  }
+}

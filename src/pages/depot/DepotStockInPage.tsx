@@ -1,14 +1,15 @@
 import { useState, useEffect, useMemo } from 'react';
 import { 
   ArrowLeft, Search, ShoppingBag, CheckCircle2, 
-  Printer, Share2, CreditCard, Banknote, Building2, Smartphone,
+  CreditCard, Banknote, Building2, Smartphone,
   Trash2, ChevronRight, Tag, Loader2, Truck, AlertTriangle
 } from 'lucide-react';
-import { toBangla } from '../../lib/utils';
+import { toBangla, numberToWordsBn } from '../../lib/utils';
 import { useAppContext } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
-import { demoProducts, demoCompaniesList } from '../../lib/demoData';
+import { demoProducts, demoCompaniesList, demoReceiptDefaults } from '../../lib/demoData';
+import { ReceiptModal, type ReceiptData } from '../ReceiptModal';
 
 interface Props {
   onBack: () => void;
@@ -16,7 +17,9 @@ interface Props {
 
 export default function DepotStockInPage({ onBack }: Props) {
   const { isDemoMode } = useAppContext();
-  const { activeBusiness } = useAuth();
+  const { activeBusiness, user } = useAuth();
+
+  const preparedByName = user?.user_metadata?.name || user?.email || 'ইউজার';
 
   const [step, setStep] = useState<number>(1);
   const [cart, setCart] = useState<any[]>([]);
@@ -25,7 +28,6 @@ export default function DepotStockInPage({ onBack }: Props) {
 
   const [products, setProducts] = useState<any[]>([]);
   const [companies, setCompanies] = useState<any[]>([]);
-  
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCompany, setSelectedCompany] = useState<any>(null);
 
@@ -37,9 +39,12 @@ export default function DepotStockInPage({ onBack }: Props) {
   const [paidAmount, setPaidAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [remarks, setRemarks] = useState('');
-  const [receiptId, setReceiptId] = useState('');
+  
+  const [isReceiptOpen, setIsReceiptOpen] = useState(false);
+  const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
   
   const [toast, setToast] = useState<{ show: boolean, message: string, type: 'success' | 'error' }>({ show: false, message: '', type: 'success' });
+  const [flyingItems, setFlyingItems] = useState<{ id: string, x: number, y: number, qty: number }[]>([]);
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setToast({ show: true, message, type });
@@ -58,7 +63,7 @@ export default function DepotStockInPage({ onBack }: Props) {
           category: p.category,
           company: p.company
         })));
-        setCompanies(demoCompaniesList);
+        setCompanies(demoCompaniesList || []);
       } else {
         if (!activeBusiness?.id) return;
 
@@ -90,14 +95,28 @@ export default function DepotStockInPage({ onBack }: Props) {
   }, [isDemoMode, activeBusiness?.id]);
 
   const filteredProducts = useMemo(() => {
-    return products.filter(prod => {
-      const matchSearch = prod.name.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchSearch;
-    });
+    return products.filter(prod => prod.name.toLowerCase().includes(searchQuery.toLowerCase()));
   }, [products, searchQuery]);
 
-  const addToCart = (product: any) => {
+  const addToCart = (product: any, e?: React.MouseEvent) => {
     const existing = cart.find(item => item.id === product.id);
+    const currentQty = existing ? existing.qty : 0;
+
+    if (e) {
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      const newItem = { 
+        id: Math.random().toString(), 
+        productId: product.id, 
+        x: rect.left + rect.width/2, 
+        y: rect.top + rect.height/2, 
+        qty: currentQty + 1 
+      };
+      setFlyingItems(prev => [...prev, newItem]);
+      setTimeout(() => {
+        setFlyingItems(prev => prev.filter(item => item.id !== newItem.id));
+      }, 800);
+    }
+
     if (existing) {
       setCart(cart.map(item => item.id === product.id ? { ...item, qty: item.qty + 1 } : item));
     } else {
@@ -106,35 +125,104 @@ export default function DepotStockInPage({ onBack }: Props) {
   };
 
   const removeFromCart = (id: string) => setCart(cart.filter(item => item.id !== id));
-  const updateQty = (id: string, newQty: number) => { if (newQty >= 1) setCart(cart.map(item => item.id === id ? { ...item, qty: newQty } : item)); };
-  const updateRate = (id: string, newRate: number) => { if (newRate >= 0) setCart(cart.map(item => item.id === id ? { ...item, rate: newRate } : item)); };
+  
+  const updateQty = (id: string, newQty: any) => { 
+    const val = newQty === '' ? '' : Number(newQty);
+    setCart(cart.map(item => item.id === id ? { ...item, qty: val } : item)); 
+  };
+  
+  const updateRate = (id: string, newRate: any) => {
+    const val = newRate === '' ? '' : Number(newRate);
+    setCart(cart.map(item => item.id === id ? { ...item, rate: val } : item));
+  };
 
-  const subTotal = cart.reduce((acc, item) => acc + (item.qty * item.rate), 0);
+  const subTotal = cart.reduce((acc, item) => acc + ((Number(item.qty) || 0) * (Number(item.rate) || 0)), 0);
   const discountVal = hasDiscount ? (Number(discountAmount) || 0) : 0;
   const deliveryVal = hasDelivery ? (Number(deliveryCharge) || 0) : 0;
   const finalTotal = subTotal - discountVal + deliveryVal;
   const dueAmount = finalTotal - (Number(paidAmount) || 0);
 
-  const handleConfirmStockIn = async () => {
+  const resetForm = () => {
+    setCart([]);
+    setSelectedCompany(null);
+    setPaidAmount('');
+    setDiscountAmount('');
+    setDeliveryCharge('');
+    setRemarks('');
+    setStep(1);
+  };
+
+  const handleProceedToReceipt = () => {
     if (!isDemoMode) {
       if (!activeBusiness?.id) return showToast('বিজনেস সিলেক্ট করা নেই!', 'error');
       if (!selectedCompany) return showToast('কোম্পানি সিলেক্ট করুন!', 'error');
     }
-    
+
+    const today = new Date();
+    const dateStr = today.toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
+
+    let prefix = 'STK-';
+    if (activeBusiness?.id) {
+      const saved = localStorage.getItem(`receipt_settings_${activeBusiness.id}`);
+      if (saved) prefix = JSON.parse(saved).invoicePrefix || 'STK-';
+    }
+    const generatedInvoiceNo = prefix + Math.floor(Math.random() * 100000);
+
+    const newReceiptData: ReceiptData = {
+      invoiceNo: isDemoMode ? 'STK-' + Math.floor(Math.random() * 10000) : generatedInvoiceNo,
+      date: dateStr,
+      status: dueAmount > 0 ? 'Due' : 'Paid',
+      shopName: activeBusiness?.name || 'DREAM AGRO',
+      shopAddress: (activeBusiness as any)?.address || '',
+      shopPhone: (activeBusiness as any)?.phone || '',
+      shopEmail: (activeBusiness as any)?.email || '',
+      shopLogoUrl: activeBusiness?.logo_url,
+      customerName: selectedCompany?.name || 'সাধারণ কোম্পানি',
+      proprietor: 'N/A',
+      customerPhone: 'N/A',
+      customerAddress: 'N/A',
+      marketName: 'N/A',
+      officerName: preparedByName,
+      officerPhone: user?.user_metadata?.phone || 'N/A',
+      officerEmail: user?.email || 'N/A',
+      receiptTime: `${dateStr}, ${new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}`,
+
+      vehicleNo: isDemoMode ? demoReceiptDefaults.vehicleNo : '',
+      driverName: isDemoMode ? demoReceiptDefaults.driverName : '',
+      driverPhone: isDemoMode ? demoReceiptDefaults.driverPhone : '',
+      transportRent: deliveryVal,
+      items: cart.map(item => ({
+        id: item.id, name: item.name, category: item.category || 'সাধারণ পণ্য',
+        quantity: Number(item.qty) || 0, unit: 'পিস', unitPrice: Number(item.rate) || 0, totalPrice: (Number(item.qty) || 0) * (Number(item.rate) || 0)
+      })),
+      totalBags: 0,
+      totalPieces: cart.reduce((acc, item) => acc + (Number(item.qty) || 0), 0),
+      subtotal: subTotal,
+      discount: discountVal,
+      grandTotal: finalTotal,
+      paidAmount: Number(paidAmount) || 0,
+      dueAmount: Math.max(0, dueAmount),
+      paidInWords: numberToWordsBn(Number(paidAmount) || 0),
+      shopDescription: 'স্টক ইন চালান (পারচেজ)',
+      tableNote: 'ডেলিভারির সময় পণ্যের বস্তা ও ওজন সঠিকভাবে বুঝে নেওয়া হলো।',
+      footerText1: isDemoMode ? demoReceiptDefaults.footerText1 : 'ধন্যবাদ!',
+      footerText2: isDemoMode ? demoReceiptDefaults.footerText2 : 'Powered by Hishabpati',
+      note: remarks || (isDemoMode ? demoReceiptDefaults.defaultNote : ''),
+    };
+
+    setReceiptData(newReceiptData);
+    setIsReceiptOpen(true);
+  };
+
+  const handleFinalizeStockIn = async () => {
     setIsSaving(true);
     try {
-      if (isDemoMode) {
-        setReceiptId('STK-' + Math.floor(Math.random() * 100000));
-        setStep(4);
-      } else {
+      if (!isDemoMode) {
         const itemsJson = cart.map(item => ({ 
-          product_id: item.id, 
-          quantity: item.qty, 
-          rate: item.rate, 
-          total: item.qty * item.rate 
+          product_id: item.id, quantity: Number(item.qty) || 0, rate: Number(item.rate) || 0, total: (Number(item.qty) || 0) * (Number(item.rate) || 0) 
         }));
 
-        const { data, error } = await supabase.rpc('create_purchase', {
+        const { error } = await supabase.rpc('create_purchase', {
           p_business_id: activeBusiness?.id,
           p_company_id: selectedCompany.id,
           p_supplier_id: null,
@@ -152,9 +240,11 @@ export default function DepotStockInPage({ onBack }: Props) {
         });
 
         if (error) throw error;
-        setReceiptId(data);
-        setStep(4);
       }
+      showToast('স্টক ইন সফলভাবে সম্পন্ন হয়েছে!', 'success');
+      setIsReceiptOpen(false);
+      resetForm();
+      onBack();
     } catch (error: any) {
       showToast("সমস্যা: " + error.message, 'error');
     } finally {
@@ -179,7 +269,7 @@ export default function DepotStockInPage({ onBack }: Props) {
         </div>
       )}
 
-      <header className="bg-da-depotNavy text-white shadow-md shrink-0 z-40">
+      <header className="bg-da-depotNavy text-white shadow-md shrink-0 z-40 print:hidden">
         <div className="px-3 py-2.5 flex items-center gap-3">
           <button onClick={handleBack} className="p-1.5 bg-white/10 rounded-lg hover:bg-white/20 transition">
             <ArrowLeft size={20} />
@@ -188,14 +278,12 @@ export default function DepotStockInPage({ onBack }: Props) {
             {step === 1 && "স্টক ইন - পণ্য নির্বাচন"}
             {step === 2 && "স্টক ইন - কার্ট"}
             {step === 3 && "স্টক ইন - পেমেন্ট"}
-            {step === 4 && "স্টক ইন - রিসিপ্ট"}
           </h1>
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto p-2.5 flex flex-col gap-2.5 pb-24">
+      <main className="flex-1 overflow-y-auto p-2.5 flex flex-col gap-2.5 pb-24 print:p-0 print:overflow-visible">
         
-        {/* ================= স্টেপ ১: প্রোডাক্ট লিস্ট ================= */}
         {step === 1 && (
           <>
             <div className="bg-white border border-da-cardBorder rounded-xl p-2.5 shadow-sm shrink-0">
@@ -223,57 +311,90 @@ export default function DepotStockInPage({ onBack }: Props) {
               ) : filteredProducts.length === 0 ? (
                 <div className="col-span-2 text-center text-da-textMuted text-sm mt-10">কোনো পণ্য পাওয়া যায়নি</div>
               ) : (
-                filteredProducts.map(prod => (
-                  <div key={prod.id} onClick={() => addToCart(prod)} className="bg-white p-1.5 rounded-lg border border-da-cardBorder shadow-sm flex items-center gap-2 cursor-pointer active:scale-[0.97] transition-transform h-[68px]">
-                    <div className="w-12 h-12 bg-da-depotBg rounded flex items-center justify-center text-da-textMuted shrink-0 overflow-hidden border border-da-cardBorder">
-                      {prod.image_url ? <img src={prod.image_url} alt="" className="w-full h-full object-cover" /> : <ShoppingBag size={20} />}
-                    </div>
-                    <div className="flex-1 min-w-0 flex flex-col justify-between h-full py-0.5">
-                      <div>
-                        <h3 className="font-bold text-[11px] text-da-textDark line-clamp-2 leading-tight">{prod.name}</h3>
-                        <div className="flex gap-1 mt-0.5 overflow-hidden">
-                          <span className="text-[8px] font-bold text-da-teal truncate">{prod.category}</span>
+                filteredProducts.map(prod => {
+                  const cartItem = cart.find(c => c.id === prod.id);
+                  return (
+                    <div 
+                      key={prod.id} 
+                      onClick={(e) => addToCart(prod, e)} 
+                      className="relative bg-white p-1.5 rounded-lg border border-da-cardBorder shadow-sm flex items-center gap-2 cursor-pointer active:scale-[0.97] transition-transform h-[68px]"
+                    >
+                      {cartItem && (
+                        <div className="absolute -top-1.5 -right-1.5 bg-da-red text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full shadow-md z-10 border-2 border-white">
+                          {toBangla(cartItem.qty)}
+                        </div>
+                      )}
+                      <div className="w-12 h-12 bg-da-depotBg rounded flex items-center justify-center text-da-textMuted shrink-0 overflow-hidden border border-da-cardBorder">
+                        {prod.image_url ? <img src={prod.image_url} alt="" className="w-full h-full object-cover" /> : <ShoppingBag size={20} />}
+                      </div>
+                      <div className="flex-1 min-w-0 flex flex-col justify-between h-full py-0.5">
+                        <div>
+                          <h3 className="font-bold text-[11px] text-da-textDark line-clamp-2 leading-tight">{prod.name}</h3>
+                          <span className="text-[8px] font-bold text-da-teal truncate block mt-0.5">{prod.category}</span>
+                        </div>
+                        <div className="flex justify-between items-end mt-0.5">
+                          <span className="text-[9px] text-da-textMuted font-bold">স্টক: {toBangla(prod.stock_quantity)}</span>
+                          <span className="text-[11px] font-black text-da-depotBlue">৳{toBangla(prod.purchase_price)}</span>
                         </div>
                       </div>
-                      <div className="flex justify-between items-end mt-0.5">
-                        <span className="text-[9px] text-da-textMuted font-bold truncate">স্টক: {toBangla(prod.stock_quantity)}</span>
-                        <span className="text-[11px] font-black text-da-depotBlue shrink-0">৳{toBangla(prod.purchase_price)}</span>
-                      </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </>
         )}
 
-        {/* ================= স্টেপ ২: কার্ট ================= */}
         {step === 2 && (
           <>
-            <div className="bg-white rounded-xl border border-da-cardBorder shadow-sm overflow-hidden shrink-0">
-              <div className="grid grid-cols-12 bg-da-depotBg p-2 text-[11px] font-bold text-da-textMuted border-b border-da-cardBorder">
-                <div className="col-span-5">পণ্য</div>
-                <div className="col-span-2 text-center">পরিমাণ</div>
-                <div className="col-span-2 text-center">দর</div>
-                <div className="col-span-3 text-right">মোট</div>
+            <div className="bg-white rounded-xl border border-da-cardBorder shadow-sm overflow-hidden mt-1 shrink-0">
+              <div className="bg-da-innerBg py-1.5 px-2 text-[11px] font-bold text-da-depotBlue text-center border-b border-da-cardBorder">
+                আইটেম {toBangla(cart.length)}টি | মোট পণ্য {toBangla(cart.reduce((acc, item) => acc + (Number(item.qty) || 0), 0))}টি
               </div>
+              
+              <div className="grid grid-cols-[1fr_55px_65px_75px] gap-1 bg-da-depotNavy p-2 text-[11px] font-bold text-white text-center items-center">
+                <div className="text-left pl-1">পণ্য</div>
+                <div>পরিমাণ</div>
+                <div>দর</div>
+                <div className="text-right pr-1">মোট</div>
+              </div>
+              
               {cart.length === 0 ? (
                 <div className="p-4 text-center text-sm text-da-textMuted">কার্ট খালি আছে</div>
               ) : (
                 cart.map((item, idx) => (
-                  <div key={idx} className="grid grid-cols-12 p-2 items-center border-b border-da-cardBorder last:border-0 text-xs">
-                    <div className="col-span-5 font-bold flex flex-col">
-                      <span className="truncate text-da-textDark">{item.name}</span>
-                    </div>
-                    <div className="col-span-2 flex justify-center">
-                      <input type="number" value={item.qty} onChange={(e) => updateQty(item.id, parseInt(e.target.value))} className="w-10 text-center border border-da-cardBorder rounded bg-da-depotBg py-1 text-xs" />
-                    </div>
-                    <div className="col-span-2 flex justify-center">
-                      <input type="number" value={item.rate} onChange={(e) => updateRate(item.id, parseInt(e.target.value))} className="w-12 text-center border border-da-cardBorder rounded bg-white py-1 text-xs font-bold text-da-depotBlue" />
-                    </div>
-                    <div className="col-span-3 text-right font-bold flex items-center justify-end gap-1 text-da-textDark">
-                       ৳{toBangla(item.qty * item.rate)}
-                       <button onClick={() => removeFromCart(item.id)} className="text-da-red ml-1"><Trash2 size={12}/></button>
+                  <div key={idx} className="border-b border-da-cardBorder last:border-0 px-2 py-1.5">
+                    <div className="grid grid-cols-[1fr_55px_65px_75px] gap-1 items-center w-full">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <button onClick={() => removeFromCart(item.id)} className="text-da-red p-1 bg-red-50 rounded active:scale-90 transition shrink-0">
+                          <Trash2 size={14}/>
+                        </button>
+                        <p className="text-[11px] font-bold text-da-textDark truncate">{item.name}</p>
+                      </div>
+                      
+                      <div className="flex justify-center">
+                        <input 
+                          type="number" 
+                          value={item.qty} 
+                          onChange={(e) => updateQty(item.id, e.target.value)} 
+                          className="w-full max-w-[45px] text-center border border-da-cardBorder rounded bg-white py-1 text-[11px] font-bold focus:border-da-depotBlue outline-none" 
+                          placeholder="0"
+                        />
+                      </div>
+                      
+                      <div className="flex justify-center">
+                        <input 
+                          type="number" 
+                          value={item.rate} 
+                          onChange={(e) => updateRate(item.id, e.target.value)} 
+                          className="w-full max-w-[55px] text-center border border-da-cardBorder rounded bg-white py-1 text-[11px] font-bold text-da-depotBlue focus:border-da-depotBlue outline-none" 
+                          placeholder="0"
+                        />
+                      </div>
+                      
+                      <div className="text-right pr-1 font-bold text-xs text-da-textDark shrink-0">
+                        ৳ {toBangla((Number(item.qty) || 0) * (Number(item.rate) || 0))}
+                      </div>
                     </div>
                   </div>
                 ))
@@ -285,7 +406,6 @@ export default function DepotStockInPage({ onBack }: Props) {
                 <span>সাব টোটাল</span>
                 <span>৳ {toBangla(subTotal)}</span>
               </div>
-
               <div className="flex flex-col gap-2">
                 <div className="flex justify-between items-center bg-da-depotBg p-2 rounded-lg border border-da-cardBorder cursor-pointer" onClick={() => setHasDiscount(!hasDiscount)}>
                   <span className="font-bold text-da-textDark text-xs flex items-center gap-1">ডিসকাউন্ট <Tag size={12}/></span>
@@ -293,21 +413,16 @@ export default function DepotStockInPage({ onBack }: Props) {
                     <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-all duration-300 shadow-sm transform ${hasDiscount ? 'translate-x-5' : 'translate-x-0.5'}`}></div>
                   </button>
                 </div>
-                {hasDiscount && (
-                  <input type="number" placeholder="ডিসকাউন্ট পরিমাণ" value={discountAmount} onChange={e => setDiscountAmount(e.target.value)} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" />
-                )}
-
+                {hasDiscount && <input type="number" placeholder="ডিসকাউন্ট পরিমাণ" value={discountAmount} onChange={e => setDiscountAmount(e.target.value)} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" />}
+                
                 <div className="flex justify-between items-center bg-da-depotBg p-2 rounded-lg border border-da-cardBorder cursor-pointer" onClick={() => setHasDelivery(!hasDelivery)}>
                   <span className="font-bold text-da-textDark text-xs flex items-center gap-1">ডেলিভারি চার্জ <Truck size={12}/></span>
                   <button className={`w-10 h-5 rounded-full relative transition-colors duration-300 ${hasDelivery ? 'bg-da-depotBlue' : 'bg-gray-300'}`}>
                     <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-all duration-300 shadow-sm transform ${hasDelivery ? 'translate-x-5' : 'translate-x-0.5'}`}></div>
                   </button>
                 </div>
-                {hasDelivery && (
-                  <input type="number" placeholder="ডেলিভারি চার্জ" value={deliveryCharge} onChange={e => setDeliveryCharge(e.target.value)} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" />
-                )}
+                {hasDelivery && <input type="number" placeholder="ডেলিভারি চার্জ" value={deliveryCharge} onChange={e => setDeliveryCharge(e.target.value)} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" />}
               </div>
-
               <div className="flex justify-between font-black text-lg text-da-depotBlue mt-1 border-t border-da-cardBorder pt-2">
                 <span>সর্বমোট</span>
                 <span>৳ {toBangla(finalTotal)}</span>
@@ -316,20 +431,19 @@ export default function DepotStockInPage({ onBack }: Props) {
           </>
         )}
 
-        {/* ================= স্টেপ ৩: পেমেন্ট ================= */}
         {step === 3 && (
           <>
-            <div className="text-center py-2 shrink-0">
-              <span className="text-xs text-da-textMuted font-bold">মোট প্রদেয়</span>
-              <h2 className="text-3xl font-black text-da-depotBlue">৳ {toBangla(finalTotal)}</h2>
+            <div className="bg-da-depotNavy text-white rounded-xl p-3 flex justify-between items-center shadow-blue-soft shrink-0">
+              <span className="font-bold text-sm">সর্বমোট</span>
+              <span className="font-black text-xl">{toBangla(finalTotal)}</span>
             </div>
 
-            <div className="flex flex-col gap-1 shrink-0">
+            <div className="flex flex-col gap-1 mt-1 shrink-0">
                <div className="flex justify-between items-center">
                  <label className="text-xs font-bold text-da-depotBlue">ক্যাশ দিয়েছি</label>
                  <div className="flex gap-1.5">
-                   <button onClick={() => setPaidAmount(finalTotal.toString())} className="text-[10px] font-bold bg-da-green/10 text-da-green px-2 py-1 rounded border border-da-green/30 active:scale-95 transition">পুরো টাকা</button>
-                   <button onClick={() => setPaidAmount('0')} className="text-[10px] font-bold bg-da-red/10 text-da-red px-2 py-1 rounded border border-da-red/30 active:scale-95 transition">সম্পূর্ণ বাকি</button>
+                   <button onClick={() => setPaidAmount(finalTotal.toString())} className="text-[10px] font-bold bg-da-green/10 text-da-green px-2 py-1 rounded border border-da-green/30">পুরো টাকা</button>
+                   <button onClick={() => setPaidAmount('0')} className="text-[10px] font-bold bg-da-red/10 text-da-red px-2 py-1 rounded border border-da-red/30">সম্পূর্ণ বাকি</button>
                  </div>
                </div>
                <input type="number" value={paidAmount} onChange={(e) => setPaidAmount(e.target.value)} className="w-full bg-white border border-da-cardBorder rounded-lg p-2.5 outline-none focus:border-da-depotBlue font-bold text-lg shadow-sm mt-1" placeholder="0" />
@@ -344,24 +458,12 @@ export default function DepotStockInPage({ onBack }: Props) {
             </div>
 
             <div className="grid grid-cols-2 gap-2 shrink-0">
-              <button onClick={() => setPaymentMethod('cash')} className={`p-2 rounded-xl border flex items-center justify-center gap-2 transition ${paymentMethod === 'cash' ? 'border-da-depotBlue bg-da-depotBlue/10 shadow-sm' : 'border-da-cardBorder bg-white'}`}>
-                <Banknote size={18} className={paymentMethod === 'cash' ? 'text-da-depotBlue' : 'text-da-textMuted'}/>
-                <span className="text-xs font-bold text-da-textDark">নগদ</span>
-              </button>
-              <button onClick={() => setPaymentMethod('due')} className={`p-2 rounded-xl border flex items-center justify-center gap-2 transition ${paymentMethod === 'due' ? 'border-da-depotBlue bg-da-depotBlue/10 shadow-sm' : 'border-da-cardBorder bg-white'}`}>
-                <CreditCard size={18} className={paymentMethod === 'due' ? 'text-da-depotBlue' : 'text-da-textMuted'}/>
-                <span className="text-xs font-bold text-da-textDark">বাকি</span>
-              </button>
-              <button onClick={() => setPaymentMethod('bkash')} className={`p-2 rounded-xl border flex items-center justify-center gap-2 transition ${paymentMethod === 'bkash' ? 'border-da-depotBlue bg-da-depotBlue/10 shadow-sm' : 'border-da-cardBorder bg-white'}`}>
-                <Smartphone size={18} className={paymentMethod === 'bkash' ? 'text-da-depotBlue' : 'text-da-textMuted'}/>
-                <span className="text-xs font-bold text-da-textDark">বিকাশ</span>
-              </button>
-              <button onClick={() => setPaymentMethod('bank')} className={`p-2 rounded-xl border flex items-center justify-center gap-2 transition ${paymentMethod === 'bank' ? 'border-da-depotBlue bg-da-depotBlue/10 shadow-sm' : 'border-da-cardBorder bg-white'}`}>
-                <Building2 size={18} className={paymentMethod === 'bank' ? 'text-da-depotBlue' : 'text-da-textMuted'}/>
-                <span className="text-xs font-bold text-da-textDark">ব্যাংক</span>
-              </button>
+              <button onClick={() => setPaymentMethod('cash')} className={`p-2 rounded-xl border flex items-center justify-center gap-2 transition ${paymentMethod === 'cash' ? 'border-da-depotBlue bg-da-depotBlue/10' : 'border-da-cardBorder bg-white'}`}><Banknote size={18} className={paymentMethod === 'cash' ? 'text-da-depotBlue' : 'text-da-textMuted'}/><span className="text-xs font-bold text-da-textDark">নগদ</span></button>
+              <button onClick={() => setPaymentMethod('due')} className={`p-2 rounded-xl border flex items-center justify-center gap-2 transition ${paymentMethod === 'due' ? 'border-da-depotBlue bg-da-depotBlue/10' : 'border-da-cardBorder bg-white'}`}><CreditCard size={18} className={paymentMethod === 'due' ? 'text-da-depotBlue' : 'text-da-textMuted'}/><span className="text-xs font-bold text-da-textDark">বাকি</span></button>
+              <button onClick={() => setPaymentMethod('bkash')} className={`p-2 rounded-xl border flex items-center justify-center gap-2 transition ${paymentMethod === 'bkash' ? 'border-da-depotBlue bg-da-depotBlue/10' : 'border-da-cardBorder bg-white'}`}><Smartphone size={18} className={paymentMethod === 'bkash' ? 'text-da-depotBlue' : 'text-da-textMuted'}/><span className="text-xs font-bold text-da-textDark">বিকাশ</span></button>
+              <button onClick={() => setPaymentMethod('bank')} className={`p-2 rounded-xl border flex items-center justify-center gap-2 transition ${paymentMethod === 'bank' ? 'border-da-depotBlue bg-da-depotBlue/10' : 'border-da-cardBorder bg-white'}`}><Building2 size={18} className={paymentMethod === 'bank' ? 'text-da-depotBlue' : 'text-da-textMuted'}/><span className="text-xs font-bold text-da-textDark">ব্যাংক</span></button>
             </div>
-
+            
             <div className="shrink-0 mt-2">
               <label className="text-xs font-bold text-da-textDark mb-1 block">মন্তব্য লিখুন</label>
               <textarea value={remarks} onChange={e => setRemarks(e.target.value)} className="w-full bg-white border border-da-cardBorder rounded-lg p-2 outline-none focus:border-da-depotBlue min-h-[50px] text-sm shadow-sm" />
@@ -369,92 +471,56 @@ export default function DepotStockInPage({ onBack }: Props) {
           </>
         )}
 
-        {/* ================= স্টেপ ৪: রিসিপ্ট ================= */}
-        {step === 4 && (
-          <div id="printable-receipt" className="bg-white p-3 rounded-xl shadow-lg border border-da-cardBorder font-serif text-[11px] relative overflow-hidden w-full max-w-sm mx-auto">
-             <div className="text-center mb-2">
-               <h2 className="text-lg font-bold text-da-depotNavy">DREAM AGRO</h2>
-               <p className="text-[10px] text-da-textMuted">স্টক ইন রিসিপ্ট</p>
-             </div>
-
-             <div className="flex justify-between items-center mb-2">
-               <p className="font-bold text-da-textDark text-xs">রিসিপ্ট # {receiptId.substring(0, 14).toUpperCase()}</p>
-               <p className="text-[10px] text-da-textMuted">{new Date().toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}</p>
-             </div>
-
-             <div className="mb-2 leading-tight text-[10px] text-da-textDark">
-               <div className="flex justify-between items-center">
-                 <p className="truncate max-w-[55%]"><span className="font-bold">কোম্পানি:</span> {selectedCompany?.name || 'সাধারণ কোম্পানি'}</p>
-               </div>
-             </div>
-
-             <div className="border-t border-b border-dashed border-da-textMuted py-1 mb-1">
-                <div className="flex justify-between font-bold text-[10px] text-da-textDark mb-1">
-                  <span className="w-1/2">পণ্যের নাম</span>
-                  <span className="w-1/6 text-center">দাম</span>
-                  <span className="w-1/6 text-center">পরিমাণ</span>
-                  <span className="w-1/6 text-right">মোট দাম</span>
-                </div>
-                {cart.map((item, i) => (
-                  <div key={i} className="flex justify-between text-[10px] py-0.5 text-da-textDark">
-                    <span className="w-1/2 truncate">{i+1}. {item.name}</span>
-                    <span className="w-1/6 text-center">{toBangla(item.rate)} ৳</span>
-                    <span className="w-1/6 text-center">{toBangla(item.qty)}</span>
-                    <span className="w-1/6 text-right">{toBangla(item.qty * item.rate)} ৳</span>
-                  </div>
-                ))}
-             </div>
-
-             <div className="flex flex-col gap-0.5 text-[10px] text-right pr-1 text-da-textDark">
-                <div className="flex justify-between"><span className="text-da-textMuted">মোট:</span> <span>{toBangla(subTotal)} ৳</span></div>
-                <div className="flex justify-between"><span className="text-da-textMuted">(-) ডিসকাউন্ট:</span> <span>{toBangla(discountVal)} ৳</span></div>
-                <div className="flex justify-between"><span className="text-da-textMuted">ডেলিভারি চার্জ:</span> <span>{toBangla(deliveryVal)} ৳</span></div>
-                <div className="flex justify-between font-bold text-xs text-da-depotNavy mt-1 pt-1 border-t border-dashed border-da-textMuted"><span>মোট প্রদেয়:</span> <span>{toBangla(finalTotal)} ৳</span></div>
-                <div className="flex justify-between font-bold text-da-textDark"><span>দিয়েছি:</span> <span>{toBangla(Number(paidAmount) || 0)} ৳</span></div>
-                <div className="flex justify-between font-bold text-da-textDark"><span>এই লেনদেনের বাকি:</span> <span>{toBangla(Math.max(0, dueAmount))} ৳</span></div>
-             </div>
-
-             <div className="mt-2 text-[10px] text-da-textDark">
-               <p>মূল্যপরিশোধ পদ্ধতি: {paymentMethod === 'cash' ? 'নগদ টাকা' : paymentMethod === 'due' ? 'বাকি' : paymentMethod === 'bkash' ? 'বিকাশ/নগদ' : 'ব্যাংক চেক'}</p>
-               {remarks && <p className="mt-0.5">নোট: {remarks}</p>}
-             </div>
-
-             <div className="text-center mt-3 text-[9px] text-da-textMuted">Powered by: Akand Smart Solutions</div>
-             
-             <div className="flex justify-center gap-6 mt-3 print:hidden">
-               <button onClick={() => window.print()} className="flex flex-col items-center gap-1 text-da-textDark active:scale-95 transition">
-                 <Printer size={20}/><span className="text-[10px] font-bold">রিসিপ্ট প্রিন্ট করুন</span>
-               </button>
-               <button className="flex flex-col items-center gap-1 text-da-textDark active:scale-95 transition">
-                 <Share2 size={20}/><span className="text-[10px] font-bold">রিসিপ্ট শেয়ার করুন</span>
-               </button>
-             </div>
-          </div>
-        )}
-
       </main>
 
-      <div className="fixed bottom-0 left-0 w-full bg-white border-t border-da-cardBorder p-2.5 z-50">
+      <div className="fixed bottom-0 left-0 w-full bg-white border-t border-da-cardBorder p-2.5 z-50 print:hidden">
          {step === 1 && (
-           <div className="flex justify-between items-center bg-da-depotBlue text-white p-2 rounded-xl shadow-blue-soft">
-             <div className="flex items-center gap-2 font-bold text-sm pl-1">পণ্য: {toBangla(cart.reduce((a,c)=>a+c.qty,0))}</div>
-             <button onClick={() => setStep(2)} disabled={cart.length === 0 || !selectedCompany} className="bg-white text-da-depotBlue px-4 py-2 rounded-lg font-bold shadow-sm flex items-center gap-1 disabled:opacity-50">
-               পরবর্তী <ChevronRight size={18}/>
-             </button>
+           <div className="flex justify-between items-center bg-gradient-to-r from-da-depotNavy to-da-depotBlue text-white p-3 rounded-2xl shadow-lg border border-white/10">
+             <div className="flex flex-col">
+               <span className="text-[10px] text-white/80 font-bold mb-0.5">সর্বমোট মূল্য</span>
+               <span className="font-black text-xl">৳ {toBangla(finalTotal)}</span>
+             </div>
+             <div className="flex items-center gap-3">
+               <div className="text-right">
+                 <p className="text-[11px] font-bold text-amber-200">আইটেম: {toBangla(cart.length)} টি</p>
+                 <p className="text-[11px] font-bold text-amber-200">মোট পণ্য: {toBangla(cart.reduce((acc, item) => acc + (Number(item.qty) || 0), 0))} টি</p>
+               </div>
+               <button onClick={() => setStep(2)} disabled={cart.length === 0 || !selectedCompany} className="bg-white text-da-depotBlue px-5 py-2.5 rounded-xl font-black shadow-md flex items-center gap-1 disabled:opacity-50 active:scale-95 transition-transform">
+                 <ChevronRight size={20}/>
+               </button>
+             </div>
            </div>
          )}
+
          {step === 2 && (
            <button onClick={() => setStep(3)} className="w-full bg-da-depotBlue text-white py-3 rounded-xl font-bold shadow-blue-soft flex justify-center items-center gap-2">এগিয়ে যান</button>
          )}
+
          {step === 3 && (
-           <button onClick={handleConfirmStockIn} disabled={isSaving} className="w-full bg-da-depotBlue text-white py-3 rounded-xl font-bold shadow-blue-soft flex justify-center items-center gap-2">
-             {isSaving ? <Loader2 className="animate-spin" size={18}/> : <CheckCircle2 size={18}/>} স্টক ইন কনফার্ম করুন
+           <button onClick={handleProceedToReceipt} className="w-full bg-da-depotBlue text-white py-3 rounded-xl font-bold shadow-blue-soft flex justify-center items-center gap-2">
+             <CheckCircle2 size={18}/> পেমেন্ট কনফার্ম করুন
            </button>
          )}
-         {step === 4 && (
-           <button onClick={onBack} className="w-full bg-da-depotBlue text-white py-3 rounded-xl font-bold shadow-blue-soft">সম্পন্ন করুন</button>
-         )}
       </div>
+
+      {flyingItems.map(item => (
+        <div key={item.id} className="fixed z-[999] w-8 h-8 bg-da-depotBlue text-white rounded-full flex items-center justify-center font-bold text-sm shadow-[0_0_20px_rgba(30,136,229,0.6)] border-2 border-white pointer-events-none" style={{ left: item.x - 16, top: item.y - 16, animation: 'floatUp 0.8s cubic-bezier(0.25, 1, 0.5, 1) forwards' }}>
+          {item.qty}
+          <style>{`@keyframes floatUp { 0% { transform: scale(0.5) translateY(0); opacity: 0; } 30% { transform: scale(1.2) translateY(-20px); opacity: 1; } 100% { transform: scale(1) translateY(-60px); opacity: 0; } }`}</style>
+        </div>
+      ))}
+
+      <ReceiptModal 
+        isOpen={isReceiptOpen} 
+        onClose={() => setIsReceiptOpen(false)} 
+        onCancel={() => {
+          setIsReceiptOpen(false);
+          resetForm();
+        }}
+        onFinalize={handleFinalizeStockIn}
+        isSaving={isSaving}
+        data={receiptData} 
+      />
 
     </div>
   );

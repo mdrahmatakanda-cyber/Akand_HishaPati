@@ -18,7 +18,12 @@ interface Props {
 
 export default function DepotExpensePage({ onBack }: Props) {
   const { isDemoMode } = useAppContext();
-  const { activeBusiness } = useAuth();
+  const { activeBusiness, user } = useAuth();
+
+  // ইউজারের নাম ও রোল
+  const preparedByName = user?.user_metadata?.name || user?.email || 'ইউজার';
+  const userRole = user?.user_metadata?.role;
+  const preparedByRole = !userRole ? 'রুল নেই' : userRole === 'owner' ? 'মালিক (Owner)' : userRole === 'manager' ? 'ম্যানেজার' : userRole === 'sr' ? 'সেলস অফিসার' : userRole;
   
   const [searchQuery, setSearchQuery] = useState('');
   const [expenses, setExpenses] = useState<any[]>([]);
@@ -40,6 +45,7 @@ export default function DepotExpensePage({ onBack }: Props) {
   // বিস্তারিত ও এডিট স্টেট
   const [selectedExpense, setSelectedExpense] = useState<any>(null);
   const [isEditingExpense, setIsEditingExpense] = useState(false);
+  const [receiptTheme, setReceiptTheme] = useState<'normal' | 'premium'>('normal');
 
   // ফর্ম স্টেট (খরচের কারণ বাদ দেওয়া হয়েছে)
   const [newExpenseForm, setNewExpenseForm] = useState({ 
@@ -618,12 +624,20 @@ export default function DepotExpensePage({ onBack }: Props) {
               <button onClick={() => setShowReceiptModal(false)} className="p-1 bg-white/20 rounded-full"><X size={16}/></button>
             </div>
             
-            <div className="p-3 overflow-y-auto flex justify-center bg-gray-100">
+            <div className="p-3 overflow-y-auto flex flex-col items-center bg-gray-100">
+              {/* ডিজাইন টগল */}
+              <div className="flex justify-center mb-2 print:hidden w-full">
+                <div className="bg-white border border-gray-300 rounded-lg p-0.5 flex shadow-sm">
+                  <button onClick={() => setReceiptTheme('normal')} className={`px-3 py-1 text-[10px] font-bold rounded-md transition ${receiptTheme === 'normal' ? 'bg-da-depotNavy text-white shadow-sm' : 'text-gray-500'}`}>সাধারণ</button>
+                  <button onClick={() => setReceiptTheme('premium')} className={`px-3 py-1 text-[10px] font-bold rounded-md transition ${receiptTheme === 'premium' ? 'bg-da-depotAmber text-da-depotNavy shadow-sm' : 'text-gray-500'}`}>প্রিমিয়াম</button>
+                </div>
+              </div>
+
               {/* প্রিন্টেবল এরিয়া */}
-              <div id="printable-expense-receipt" className="bg-white p-4 w-full max-w-[320px] font-serif text-[11px] border border-gray-300 shadow-sm">
-                <div className="text-center mb-3">
-                  <h2 className="text-lg font-bold text-da-depotNavy">DREAM AGRO</h2>
-                  <p className="text-[10px] text-gray-500">ডিপো খরচের রিসিপ্ট</p>
+              <div id="printable-expense-receipt" className={`p-4 w-full max-w-[320px] font-serif text-[11px] shadow-sm transition-colors duration-300 ${receiptTheme === 'premium' ? 'border-2 border-da-depotAmber bg-white' : 'bg-white border border-gray-300'}`}>
+                <div className={`text-center mb-3 pb-2 ${receiptTheme === 'premium' ? 'bg-da-depotNavy text-white -mx-4 -mt-4 pt-4 rounded-t-lg border-b-2 border-da-depotAmber' : 'border-b border-transparent'}`}>
+                  <h2 className={`text-lg font-bold ${receiptTheme === 'premium' ? 'text-white' : 'text-da-depotNavy'}`}>DREAM AGRO</h2>
+                  <p className={`text-[10px] ${receiptTheme === 'premium' ? 'text-gray-200' : 'text-gray-500'}`}>ডিপো খরচের রিসিপ্ট</p>
                 </div>
                 
                 <div className="flex justify-between items-center mb-2 text-[10px]">
@@ -646,7 +660,7 @@ export default function DepotExpensePage({ onBack }: Props) {
                 
                 {lastSavedExpense.note && <p className="mt-2 text-[10px]">নোট: {lastSavedExpense.note}</p>}
                 
-                <div className="text-center mt-4 text-[9px] text-gray-400">Powered by: Akand Smart Solutions</div>
+<div className="flex justify-between items-end mt-4 pt-2 border-t border-dashed border-gray-400 text-[9px] text-gray-500"> <div> <p>Powered by: Akand Smart Solutions</p> </div> <div className="text-right"> <p className="font-bold text-gray-800">প্রস্তুতকারক: {preparedByName}</p> <p className="font-bold text-gray-800">{preparedByRole}</p> </div> </div>
               </div>
             </div>
 

@@ -310,7 +310,7 @@ export default function MenuPage({
 
         {/* অ্যাপ সেটিংস */}
         <SectionTitle title="অ্যাপ সেটিংস" />
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden block shrink-0">
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden shrink-0">
           <MenuItem icon={Globe} color="text-blue-600" bg="bg-blue-50" label="ভাষা (Language)" value="বাংলা" onClick={() => showToast('ভাষা পরিবর্তন')} />
           <div className="flex items-center justify-between p-3 border-b border-gray-100">
             <div className="flex items-center gap-3"><div className="w-8 h-8 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center shrink-0">{isDarkMode ? <Moon size={16}/> : <Sun size={16}/>}</div><span className="text-sm font-bold text-gray-700">ডার্ক মোড</span></div>
@@ -332,7 +332,7 @@ export default function MenuPage({
 
         {/* সিস্টেম টুলস */}
         <SectionTitle title="সিস্টেম টুলস" />
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden block shrink-0">
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden shrink-0">
           <MenuItem icon={Settings} color="text-indigo-600" bg="bg-indigo-50" label="মোড কাস্টমাইজেশন" onClick={() => { setTempConfig(modeConfig); setIsCustomizeModalOpen(true); }} />
           <MenuItem icon={Printer} color="text-purple-600" bg="bg-purple-50" label="প্রিন্টার সেটিংস" onClick={() => onNavigate('printer')} />
           <MenuItem icon={ShieldCheck} color="text-green-600" bg="bg-green-50" label="ইউজার ও অ্যাক্সেস ম্যানেজমেন্ট" onClick={() => onNavigate('app_access')} />
@@ -342,7 +342,7 @@ export default function MenuPage({
 
         {/* সাহায্য ও তথ্য */}
         <SectionTitle title="সাহায্য ও তথ্য" />
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden block shrink-0">
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden shrink-0">
           <MenuItem icon={HelpCircle} color="text-[#1E88E5]" bg="bg-blue-50" label="সাহায্য ও সাপোর্ট" onClick={() => onNavigate('help')} />
           <MenuItem icon={Share2} color="text-amber-600" bg="bg-amber-50" label="এই অ্যাপটি শেয়ার করুন" onClick={() => showToast('শেয়ার লিংক কপি হয়েছে')} />
           <MenuItem icon={Star} color="text-amber-500" bg="bg-amber-50" label="এই অ্যাপ রেট করুন" onClick={() => showToast('প্লে স্টোর লিংক')} />
@@ -388,7 +388,7 @@ export default function MenuPage({
                 <p className="text-[10px] text-gray-500 font-bold mt-2">ছবি পরিবর্তন করতে ক্লিক করুন</p>
               </div>
               <div><label className="text-xs font-bold text-gray-600 mb-1 block">নাম <span className="text-red-500">*</span></label><input type="text" value={profileForm.name} onChange={e => setProfileForm({...profileForm, name: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-[#0B5C47]" /></div>
-              <div><label className="text-xs font-bold text-gray-600 mb-1 block flex items-center gap-1"><Mail size={12}/> ইমেইল</label><input type="email" value={profileForm.email} disabled className="w-full border border-gray-200 bg-gray-50 text-gray-500 rounded-lg p-2.5 text-sm outline-none cursor-not-allowed" /></div>
+              <div><label className="text-xs font-bold text-gray-600 mb-1 flex items-center gap-1"><Mail size={12}/> ইমেইল</label><input type="email" value={profileForm.email} disabled className="w-full border border-gray-200 bg-gray-50 text-gray-500 rounded-lg p-2.5 text-sm outline-none cursor-not-allowed" /></div>
               <div><label className="text-xs font-bold text-gray-600 mb-1 block">মোবাইল নম্বর</label><input type="text" value={profileForm.phone} onChange={e => setProfileForm({...profileForm, phone: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-[#0B5C47]" /></div>
               <div><label className="text-xs font-bold text-gray-600 mb-1 block">ঠিকানা</label><input type="text" value={profileForm.address} onChange={e => setProfileForm({...profileForm, address: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-[#0B5C47]" /></div>
             </div>

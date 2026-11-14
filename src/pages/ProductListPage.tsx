@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   ArrowLeft, FileText, HelpCircle, Search, ScanBarcode, 
   Plus, X, Trash2, Edit2, Tag, Building2, 
-  Layers, Package, Loader2, Image as ImageIcon
+  Layers, Package, Loader2, Image as ImageIcon, ChevronRight
 } from 'lucide-react';
 import { toBangla } from '../lib/utils';
 import { supabase } from '../lib/supabase';
@@ -16,6 +16,7 @@ interface Props {
 
 interface Category { id: string; name: string; }
 interface Company { id: string; name: string; }
+
 interface Product {
   id: string;
   name: string;
@@ -23,10 +24,26 @@ interface Product {
   company_id: string;
   sale_price: number;
   purchase_price: number;
+  wholesale_price?: number;
+  dealer_price?: number;
   stock_quantity: number;
+  unit?: string;
   description: string;
   image_url: string;
+  is_online?: boolean;
+  is_wholesale?: boolean;
+  low_stock_alert?: number;
+  is_vat?: boolean;
+  warranty?: string;
+  discount?: number;
 }
+
+// ছবির মতো ইউনিট লিস্ট
+const UNITS = [
+  'কেজি', 'পিস', 'লিটার', 'টি', 'ডজন', 'বস্তা', 'সেট', 'গজ',
+  'প্যাকেট', 'কার্টন', 'স্কোয়ার মিটার', 'স্কোয়ার ফিট', 'ফুট',
+  'ইঞ্চি', 'মিটার', 'অন্যান্য'
+];
 
 export default function ProductListPage({ onBack }: Props) {
   const { activeBusiness } = useAuth();
@@ -50,8 +67,19 @@ export default function ProductListPage({ onBack }: Props) {
   const [newCategoryName, setNewCategoryName] = useState('');
   const [newCompanyName, setNewCompanyName] = useState('');
 
+  // নতুন ইউনিট সিলেক্ট মডাল স্টেট
+  const [isUnitModalOpen, setIsUnitModalOpen] = useState(false);
+
   const [formData, setFormData] = useState({
-    name: '', category_id: '', company_id: '', sale_price: '', purchase_price: '', stock_quantity: '', description: '', image_url: ''
+    name: '', category_id: '', company_id: '', 
+    unit: 'বস্তা',
+    sale_price: '', purchase_price: '', 
+    wholesale_price: '', dealer_price: '',
+    stock_quantity: '', description: '', 
+    image_url: '',
+    is_online: false, is_wholesale: false, 
+    low_stock_alert: '10', is_vat: false, 
+    warranty: '', discount: ''
   });
   
   const [productImage, setProductImage] = useState<File | null>(null);
@@ -71,6 +99,7 @@ export default function ProductListPage({ onBack }: Props) {
           sale_price: p.salePrice,
           purchase_price: p.purchasePrice,
           stock_quantity: p.stock,
+          unit: 'বস্তা',
           description: '',
           image_url: p.image_url || ''
         }));
@@ -219,11 +248,20 @@ export default function ProductListPage({ onBack }: Props) {
       name: '', 
       category_id: categories[0]?.id || '', 
       company_id: companies[0]?.id || '', 
+      unit: 'বস্তা',
       sale_price: '', 
       purchase_price: '', 
+      wholesale_price: '', 
+      dealer_price: '',
       stock_quantity: '', 
       description: '',
-      image_url: ''
+      image_url: '',
+      is_online: false,
+      is_wholesale: false,
+      low_stock_alert: '10',
+      is_vat: false,
+      warranty: '',
+      discount: ''
     });
     setModalType('add_product');
   };
@@ -235,18 +273,33 @@ export default function ProductListPage({ onBack }: Props) {
       name: prod.name,
       category_id: prod.category_id || '',
       company_id: prod.company_id || '',
+      unit: prod.unit || 'বস্তা',
       sale_price: prod.sale_price.toString(),
       purchase_price: prod.purchase_price.toString(),
+      wholesale_price: prod.wholesale_price?.toString() || '',
+      dealer_price: prod.dealer_price?.toString() || '',
       stock_quantity: prod.stock_quantity.toString(),
       description: prod.description || '',
-      image_url: prod.image_url || ''
+      image_url: prod.image_url || '',
+      is_online: prod.is_online || false,
+      is_wholesale: prod.is_wholesale || false,
+      low_stock_alert: prod.low_stock_alert?.toString() || '10',
+      is_vat: prod.is_vat || false,
+      warranty: prod.warranty || '',
+      discount: prod.discount?.toString() || ''
     });
     setModalType('add_product');
   };
 
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setProductImage(e.target.files[0]);
+    }
+  };
+
   const handleSaveProduct = async () => {
     if (!formData.name || !formData.category_id || !formData.company_id || !formData.sale_price) {
-      return alert('পণ্যের নাম, ক্যাটাগরি, কোম্পানি এবং বিক্রয় মূল্য আবশ্যক');
+      return alert('পণ্যের নাম, ক্যাটাগরি, কোম্পানি এবং খুচরা মূল্য আবশ্যক');
     }
     
     setIsSaving(true);
@@ -266,11 +319,20 @@ export default function ProductListPage({ onBack }: Props) {
         name: formData.name,
         category_id: formData.category_id,
         company_id: formData.company_id,
+        unit: formData.unit,
         sale_price: Number(formData.sale_price) || 0,
         purchase_price: Number(formData.purchase_price) || 0,
+        wholesale_price: Number(formData.wholesale_price) || 0,
+        dealer_price: Number(formData.dealer_price) || 0,
         stock_quantity: Number(formData.stock_quantity) || 0,
         description: formData.description,
-        image_url: uploadedImageUrl
+        image_url: uploadedImageUrl,
+        is_online: formData.is_online,
+        is_wholesale: formData.is_wholesale,
+        low_stock_alert: Number(formData.low_stock_alert) || 0,
+        is_vat: formData.is_vat,
+        warranty: formData.warranty,
+        discount: Number(formData.discount) || 0,
       };
 
       if (isDemoMode) {
@@ -430,7 +492,7 @@ export default function ProductListPage({ onBack }: Props) {
                     </div>
                     <div className="text-right shrink-0">
                       <p className="font-black text-sm text-gray-800">৳ {toBangla(prod.sale_price)}</p>
-                      <p className="text-[10px] font-bold text-gray-500 mt-0.5">স্টক: {toBangla(prod.stock_quantity)}</p>
+                      <p className="text-[10px] font-bold text-gray-500 mt-0.5">স্টক: {toBangla(prod.stock_quantity)} {prod.unit}</p>
                     </div>
                   </div>
                 )
@@ -510,8 +572,9 @@ export default function ProductListPage({ onBack }: Props) {
               <button onClick={() => setModalType('none')} className="p-1 bg-white/10 rounded-full hover:bg-white/20"><X size={18}/></button>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-3">
-              <div className="flex flex-col items-center mb-2">
+            <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-4">
+              
+              <div className="flex flex-col items-center mb-1">
                 <div onClick={() => fileInputRef.current?.click()} className="relative w-24 h-24 bg-gray-100 rounded-xl border-2 border-dashed border-gray-400 flex items-center justify-center overflow-hidden cursor-pointer hover:bg-gray-200 transition">
                   {productImage ? (
                     <img src={URL.createObjectURL(productImage)} alt="Preview" className="w-full h-full object-cover" />
@@ -522,7 +585,7 @@ export default function ProductListPage({ onBack }: Props) {
                   )}
                   <div className="absolute bottom-0 inset-x-0 bg-black/60 py-1 flex justify-center text-white"><Plus size={14} /></div>
                 </div>
-                <input type="file" ref={fileInputRef} onChange={(e) => setProductImage(e.target.files?.[0] || null)} accept="image/*" className="hidden" />
+                <input type="file" ref={fileInputRef} onChange={handleImageSelect} accept="image/*" className="hidden" />
                 <p className="text-[10px] text-gray-500 font-bold mt-1">ছবি যুক্ত করুন</p>
               </div>
 
@@ -535,9 +598,7 @@ export default function ProductListPage({ onBack }: Props) {
                 <div>
                   <div className="flex justify-between items-center mb-1">
                     <label className="text-xs font-bold text-gray-600">ক্যাটাগরি <span className="text-red-500">*</span></label>
-                    <button onClick={() => { setModalType('master_data'); setMasterTab('category'); }} className="text-[10px] font-bold text-[#0B5C47] bg-[#E8F5E9] px-1.5 py-0.5 rounded border border-[#A5D6A7] flex items-center gap-0.5">
-                      <Plus size={10}/> নতুন
-                    </button>
+                    <button onClick={() => { setModalType('master_data'); setMasterTab('category'); }} className="text-[10px] font-bold text-[#0B5C47] bg-[#E8F5E9] px-1.5 py-0.5 rounded border border-[#A5D6A7] flex items-center gap-0.5"><Plus size={10}/> নতুন</button>
                   </div>
                   <select value={formData.category_id} onChange={e => setFormData({...formData, category_id: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-[#0B5C47]">
                     <option value="">সিলেক্ট করুন</option>
@@ -547,9 +608,7 @@ export default function ProductListPage({ onBack }: Props) {
                 <div>
                   <div className="flex justify-between items-center mb-1">
                     <label className="text-xs font-bold text-gray-600">কোম্পানি <span className="text-red-500">*</span></label>
-                    <button onClick={() => { setModalType('master_data'); setMasterTab('company'); }} className="text-[10px] font-bold text-[#1E88E5] bg-[#EFF6FF] px-1.5 py-0.5 rounded border border-[#B5D2F3] flex items-center gap-0.5">
-                      <Plus size={10}/> নতুন
-                    </button>
+                    <button onClick={() => { setModalType('master_data'); setMasterTab('company'); }} className="text-[10px] font-bold text-[#1E88E5] bg-[#EFF6FF] px-1.5 py-0.5 rounded border border-[#B5D2F3] flex items-center gap-0.5"><Plus size={10}/> নতুন</button>
                   </div>
                   <select value={formData.company_id} onChange={e => setFormData({...formData, company_id: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-[#0B5C47]">
                     <option value="">সিলেক্ট করুন</option>
@@ -560,18 +619,75 @@ export default function ProductListPage({ onBack }: Props) {
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="text-xs font-bold text-gray-600 mb-1 block">বিক্রয় মূল্য <span className="text-red-500">*</span></label>
-                  <input type="number" value={formData.sale_price} onChange={e => setFormData({...formData, sale_price: e.target.value})} placeholder="৳ 0" className="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-[#0B5C47]" />
+                  <label className="text-xs font-bold text-gray-600 mb-1 block">পণ্যের একক <span className="text-red-500">*</span></label>
+                  <div 
+                    onClick={() => setIsUnitModalOpen(true)}
+                    className="w-full border border-gray-300 rounded-lg p-2.5 text-sm bg-white flex justify-between items-center cursor-pointer"
+                  >
+                    <span>{formData.unit || 'সিলেক্ট করুন'}</span>
+                    <ChevronRight size={16} className="text-gray-400" />
+                  </div>
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-gray-600 mb-1 block">ক্রয় মূল্য</label>
-                  <input type="number" value={formData.purchase_price} onChange={e => setFormData({...formData, purchase_price: e.target.value})} placeholder="৳ 0" className="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-[#0B5C47]" />
+                  <label className="text-xs font-bold text-gray-600 mb-1 block">বর্তমান মজুদ</label>
+                  <input type="number" value={formData.stock_quantity} onChange={e => setFormData({...formData, stock_quantity: e.target.value})} placeholder="স্টক পরিমাণ" className="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-[#0B5C47]" />
                 </div>
               </div>
 
-              <div>
-                <label className="text-xs font-bold text-gray-600 mb-1 block">বর্তমান স্টক</label>
-                <input type="number" value={formData.stock_quantity} onChange={e => setFormData({...formData, stock_quantity: e.target.value})} placeholder="স্টক পরিমাণ" className="w-full border border-gray-300 rounded-lg p-2.5 text-sm outline-none focus:border-[#0B5C47]" />
+              <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
+                <h3 className="text-xs font-bold text-[#0B5C47] mb-2 border-b pb-1">মূল্য নির্ধারণ</h3>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[11px] font-bold text-gray-600 mb-1 block">খুচরা মূল্য <span className="text-red-500">*</span></label>
+                    <input type="number" value={formData.sale_price} onChange={e => setFormData({...formData, sale_price: e.target.value})} placeholder="৳ 0" className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-[#0B5C47]" />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold text-gray-600 mb-1 block">ক্রয়মূল্য</label>
+                    <input type="number" value={formData.purchase_price} onChange={e => setFormData({...formData, purchase_price: e.target.value})} placeholder="৳ 0" className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-[#0B5C47]" />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold text-gray-600 mb-1 block">পাইকারি মূল্য</label>
+                    <input type="number" value={formData.wholesale_price} onChange={e => setFormData({...formData, wholesale_price: e.target.value})} placeholder="৳ 0" className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-[#0B5C47]" />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold text-gray-600 mb-1 block">ডিলার মূল্য</label>
+                    <input type="number" value={formData.dealer_price} onChange={e => setFormData({...formData, dealer_price: e.target.value})} placeholder="৳ 0" className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-[#0B5C47]" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white border border-gray-200 rounded-xl p-3 shadow-sm flex flex-col gap-3">
+                <h3 className="text-xs font-bold text-[#0B5C47] mb-0 border-b pb-1">অন্যান্য অপশন</h3>
+                
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="flex items-center justify-between p-2 border rounded-lg cursor-pointer hover:bg-gray-50 transition">
+                    <span className="text-xs font-bold text-gray-700">অনলাইনে বিক্রি</span>
+                    <input type="checkbox" checked={formData.is_online} onChange={e => setFormData({...formData, is_online: e.target.checked})} className="w-4 h-4 accent-[#0B5C47]" />
+                  </label>
+                  <label className="flex items-center justify-between p-2 border rounded-lg cursor-pointer hover:bg-gray-50 transition">
+                    <span className="text-xs font-bold text-gray-700">পাইকারি বিক্রি</span>
+                    <input type="checkbox" checked={formData.is_wholesale} onChange={e => setFormData({...formData, is_wholesale: e.target.checked})} className="w-4 h-4 accent-[#0B5C47]" />
+                  </label>
+                  <label className="flex items-center justify-between p-2 border rounded-lg cursor-pointer hover:bg-gray-50 transition">
+                    <span className="text-xs font-bold text-gray-700">ভ্যাট প্রযোজ্য</span>
+                    <input type="checkbox" checked={formData.is_vat} onChange={e => setFormData({...formData, is_vat: e.target.checked})} className="w-4 h-4 accent-[#0B5C47]" />
+                  </label>
+                  <div className="flex items-center justify-between p-2 border rounded-lg">
+                    <span className="text-xs font-bold text-gray-700">লো-স্টক</span>
+                    <input type="number" value={formData.low_stock_alert} onChange={e => setFormData({...formData, low_stock_alert: e.target.value})} className="w-12 text-center border rounded p-1 text-xs outline-none" />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[11px] font-bold text-gray-600 mb-1 block">ওয়ারেন্টি</label>
+                    <input type="text" value={formData.warranty} onChange={e => setFormData({...formData, warranty: e.target.value})} placeholder="যেমন: ১ বছর" className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-[#0B5C47]" />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold text-gray-600 mb-1 block">ডিসকাউন্ট (%)</label>
+                    <input type="number" value={formData.discount} onChange={e => setFormData({...formData, discount: e.target.value})} placeholder="0" className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-[#0B5C47]" />
+                  </div>
+                </div>
               </div>
 
               <div>
@@ -586,6 +702,36 @@ export default function ProductListPage({ onBack }: Props) {
                 {isSaving ? <><Loader2 size={18} className="animate-spin"/> সেভ হচ্ছে...</> : 'সেভ করুন'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= মডাল: ইউনিট সিলেক্ট (নতুন) ================= */}
+      {isUnitModalOpen && (
+        <div className="fixed inset-0 bg-black/50 z-[110] flex justify-center items-end backdrop-blur-sm">
+          <div className="bg-white w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl overflow-hidden flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[80vh]">
+            
+            <div className="flex flex-col items-center pt-3 pb-2 shrink-0 border-b border-gray-100">
+              <div className="w-12 h-1.5 bg-gray-300 rounded-full mb-3"></div>
+              <h2 className="font-bold text-lg text-[#0F2A3D]">প্রোডাক্ট এর ইউনিট সিলেক্ট করি</h2>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-4 pb-6">
+              {UNITS.map((unit) => (
+                <div
+                  key={unit}
+                  onClick={() => {
+                    setFormData({ ...formData, unit });
+                    setIsUnitModalOpen(false);
+                  }}
+                  className="flex justify-between items-center py-3.5 border-b border-gray-100 last:border-0 cursor-pointer active:bg-gray-50 transition"
+                >
+                  <span className="text-base font-medium text-[#0F2A3D]">{unit}</span>
+                  <ChevronRight size={20} className="text-gray-400" />
+                </div>
+              ))}
+            </div>
+            
           </div>
         </div>
       )}
@@ -609,7 +755,7 @@ export default function ProductListPage({ onBack }: Props) {
                 </div>
                 <div className="flex-1">
                   <h3 className="font-bold text-base text-gray-800">{selectedProduct.name}</h3>
-                  <p className="text-sm font-bold text-gray-700 mt-1">৳ {toBangla(selectedProduct.sale_price)}</p>
+                  <p className="text-sm font-bold text-gray-700 mt-1">৳ {toBangla(selectedProduct.sale_price)} / {selectedProduct.unit || ''}</p>
                   <div className="flex gap-2 mt-2">
                     <button onClick={() => handleDeleteProduct(selectedProduct.id)} className="p-1.5 border border-red-200 text-red-500 bg-red-50 rounded shadow-sm"><Trash2 size={16}/></button>
                     <button onClick={() => handleOpenEditProduct(selectedProduct)} className="flex-1 border border-[#1E88E5] text-[#1E88E5] bg-white rounded shadow-sm flex items-center justify-center gap-1 text-xs font-bold py-1"><Edit2 size={14}/> এডিট করুন</button>
@@ -619,26 +765,34 @@ export default function ProductListPage({ onBack }: Props) {
 
               <hr className="border-gray-300"/>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <div className="bg-white border border-gray-200 rounded-xl p-2 flex flex-col items-center justify-center text-center shadow-sm">
                   <span className="font-black text-[#1E88E5] text-sm">{toBangla(selectedProduct.stock_quantity)}</span>
-                  <span className="text-[10px] text-gray-600 font-bold mt-0.5">স্টক সংখ্যা</span>
+                  <span className="text-[10px] text-gray-600 font-bold mt-0.5">বর্তমান স্টক</span>
                 </div>
                 <div className="bg-white border border-gray-200 rounded-xl p-2 flex flex-col items-center justify-center text-center shadow-sm">
-                  <span className="font-black text-[#1E88E5] text-sm">{toBangla(selectedProduct.purchase_price)} ৳</span>
+                  <span className="font-black text-gray-700 text-sm">{toBangla(selectedProduct.purchase_price)} ৳</span>
                   <span className="text-[10px] text-gray-600 font-bold mt-0.5">ক্রয়মূল্য</span>
                 </div>
                 <div className="bg-white border border-gray-200 rounded-xl p-2 flex flex-col items-center justify-center text-center shadow-sm">
                   <span className="font-black text-green-600 text-sm">{toBangla(selectedProduct.sale_price - selectedProduct.purchase_price)} ৳</span>
                   <span className="text-[10px] text-gray-600 font-bold mt-0.5">লাভ</span>
                 </div>
+                {selectedProduct.wholesale_price ? (
+                  <div className="bg-white border border-gray-200 rounded-xl p-2 flex flex-col items-center justify-center text-center shadow-sm">
+                    <span className="font-black text-indigo-600 text-sm">{toBangla(selectedProduct.wholesale_price)} ৳</span>
+                    <span className="text-[10px] text-gray-600 font-bold mt-0.5">পাইকারি মূল্য</span>
+                  </div>
+                ) : null}
+                {selectedProduct.dealer_price ? (
+                  <div className="bg-white border border-gray-200 rounded-xl p-2 flex flex-col items-center justify-center text-center shadow-sm">
+                    <span className="font-black text-teal-600 text-sm">{toBangla(selectedProduct.dealer_price)} ৳</span>
+                    <span className="text-[10px] text-gray-600 font-bold mt-0.5">ডিলার মূল্য</span>
+                  </div>
+                ) : null}
                 <div className="bg-white border border-gray-200 rounded-xl p-2 flex flex-col items-center justify-center text-center shadow-sm">
                   <span className="font-black text-[#0B5C47] text-[11px] truncate w-full px-1">{categories.find(c=>c.id===selectedProduct.category_id)?.name || 'নেই'}</span>
                   <span className="text-[10px] text-gray-600 font-bold mt-0.5">ক্যাটাগরি</span>
-                </div>
-                <div className="bg-white border border-gray-200 rounded-xl p-2 flex flex-col items-center justify-center text-center shadow-sm col-span-2">
-                  <span className="font-black text-[#1E88E5] text-[11px] truncate w-full px-1">{companies.find(c=>c.id===selectedProduct.company_id)?.name || 'নেই'}</span>
-                  <span className="text-[10px] text-gray-600 font-bold mt-0.5">কোম্পানি</span>
                 </div>
               </div>
 

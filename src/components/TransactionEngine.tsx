@@ -61,13 +61,13 @@ const GatePassPaper = ({
             <div>
               <h1 className={`text-[20px] font-bold uppercase ${INK}`}>DREAM AGRO & FISHERIES</h1>
               <p className="text-[11px] text-[#2B5C8A] font-semibold mt-0.5">ক্রয়বিক্রয় ও পরিষেবা: উন্নতমানের পোল্ট্রি, ফিশ ফিড ও এগ্রো</p>
-              <p className={`text-[10px] mt-0.5 ${MUTED}`}>ফোন: ০১৭৫২০০৫০৫৭ | support@hishabpati.com</p>
+              <p className={`text-[10px] mt-0.5 ${MUTED}`}>ফোন: 01774188741 | hishab.offical@gmail.com</p>
             </div>
           </div>
           <div className="rounded border border-[#E6DBBE] bg-white">
             <div className="flex justify-between px-3 py-1.5 bg-[#FBF5E6] border-b border-[#E6DBBE]"><span className={`font-bold text-[12px] ${INK}`}>{title}</span><span className="text-[10px] text-[#7A5E1E]">GATE PASS</span></div>
             <div className="px-3 py-1.5 text-[11px] space-y-0.5">
-              <div className="flex justify-between"><span className={MUTED}>নং:</span><span className="font-bold">#{challanNo}</span></div>
+              <div className="flex justify-between"><span className={MUTED}>রিসিট নং:</span><span className="font-bold">#{challanNo}</span></div>
               <div className="flex justify-between"><span className={MUTED}>তারিখ:</span><span>{date}</span></div>
             </div>
           </div>

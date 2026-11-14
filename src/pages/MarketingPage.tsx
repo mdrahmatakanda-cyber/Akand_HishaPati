@@ -182,8 +182,8 @@ export default function MarketingPage({ onBack }: Props) {
           ></textarea>
           
           <div className="absolute bottom-2 right-3 text-right">
-            <p className="text-[10px] text-gray-500 font-bold">- মিওয়ান</p>
-            <p className="text-[10px] text-gray-500">({toBangla('01752005057')})</p>
+            <p className="text-[10px] text-gray-500 font-bold">- Dream Agro and fisheries</p>
+            <p className="text-[10px] text-gray-500">({toBangla('01774188741')})</p>
           </div>
         </div>
 

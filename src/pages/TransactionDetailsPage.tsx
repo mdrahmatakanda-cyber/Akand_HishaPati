@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Image as ImageIcon, UserPlus, Printer, Share2, ArrowUpRight, Loader2 } from 'lucide-react';
-import { toBangla } from '../lib/utils';
+import { toBangla, numberToWordsBn } from '../lib/utils';
 import { useAppContext } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
+import { ReceiptModal, type ReceiptData } from './ReceiptModal'; // নতুন ইম্পোর্ট
 
 interface DetailsProps {
   onBack: () => void;
@@ -13,10 +14,14 @@ interface DetailsProps {
 
 export default function TransactionDetailsPage({ onBack, type = 'purchase', transactionId }: DetailsProps) {
   const { isDemoMode } = useAppContext();
-  const { activeBusiness } = useAuth();
+  const { activeBusiness, user } = useAuth();
   
   const [data, setData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  // 📄 রিসিপ্ট মডালের স্টেট
+  const [isReceiptOpen, setIsReceiptOpen] = useState(false);
+  const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
 
   useEffect(() => {
     const fetchDetails = async () => {
@@ -28,7 +33,7 @@ export default function TransactionDetailsPage({ onBack, type = 'purchase', tran
       setIsLoading(true);
       try {
         if (isDemoMode) {
-          setData({
+          const demoData = {
             receiptNo: type === 'purchase' ? 'JTMPBC953J7J20P' : 'GVMTQX7S4WGR89W',
             amount: type === 'purchase' ? 280 : 2050,
             date: '07 November 2026 | 10:56 AM',
@@ -42,16 +47,65 @@ export default function TransactionDetailsPage({ onBack, type = 'purchase', tran
             items: [
               { name: type === 'purchase' ? 'তুলা' : 'গ্রোয়ার ফিড', qty: 1, rate: type === 'purchase' ? 280 : 2050, image_url: '' }
             ]
+          };
+          setData(demoData);
+
+          // ডেমু রিসিপ্ট ডেটা তৈরি
+          setReceiptData({
+            invoiceNo: demoData.receiptNo,
+            date: demoData.date,
+            status: demoData.paymentStatus === 'পরিশোধিত' ? 'Paid' : 'Due',
+            shopName: activeBusiness?.name || 'DREAM AGRO',
+            shopAddress: (activeBusiness as any)?.address || 'গাজীপুর, ঢাকা',
+            shopPhone: (activeBusiness as any)?.phone || '01752005057',
+            shopEmail: (activeBusiness as any)?.email || 'support@hishabpati.com',
+            customerName: demoData.partyName,
+            proprietor: 'N/A',
+            customerPhone: 'N/A',
+            customerAddress: 'N/A',
+            marketName: 'N/A',
+            officerName: user?.user_metadata?.name || user?.email || 'অফিসার',
+            officerPhone: user?.user_metadata?.phone || 'N/A',
+            officerEmail: user?.email || 'N/A',
+            receiptTime: demoData.date,
+            vehicleNo: 'N/A',
+            driverName: 'N/A',
+            driverPhone: 'N/A',
+            transportRent: demoData.deliveryCharge,
+            items: demoData.items.map((i: any) => ({
+              id: Math.random().toString(),
+              name: i.name,
+              category: 'সাধারণ',
+              quantity: i.qty,
+              unit: 'পিস',
+              unitPrice: i.rate,
+              totalPrice: i.qty * i.rate
+            })),
+            totalBags: 0,
+            totalPieces: demoData.items.reduce((acc: number, curr: any) => acc + curr.qty, 0),
+            subtotal: demoData.amount,
+            discount: demoData.discount,
+            grandTotal: demoData.amount,
+            paidAmount: demoData.amount,
+            dueAmount: 0,
+            paidInWords: numberToWordsBn(demoData.amount),
+            shopDescription: 'ক্রয়বিক্রয় ও পরিষেবা',
+            tableNote: '* ডেলিভারির সময় পণ্যের বস্তা ও ওজন সঠিকভাবে বুঝে নেওয়া হলো।',
+            footerText1: 'ধন্যবাদ!',
+            footerText2: 'Powered by Hishabpati',
+            note: demoData.note
           });
+
         } else {
           const table = type === 'purchase' ? 'purchases' : 'sales';
           const itemsTable = type === 'purchase' ? 'purchase_items' : 'sale_items';
           const dateCol = type === 'purchase' ? 'purchase_date' : 'sale_date';
-          const partyCol = type === 'purchase' ? 'suppliers(name)' : 'customers(name)';
-
+          const partyCol = type === 'purchase' ? 'suppliers(*)' : 'customers(*)';
+          
+          // ডাটাবেস থেকে সম্পূর্ণ তথ্য আনা (কাস্টমার/সাপ্লায়ার এবং প্রোডাক্ট ডিটেইলস সহ)
           const { data: dbData, error } = await supabase
             .from(table)
-            .select(`*, ${partyCol}, ${itemsTable}(quantity, rate, total, products(name, image_url))`)
+            .select(`*, ${partyCol}, ${itemsTable}(quantity, rate, total, products(name, image_url, unit, categories(name)))`)
             .eq('id', transactionId)
             .single();
 
@@ -61,24 +115,72 @@ export default function TransactionDetailsPage({ onBack, type = 'purchase', tran
             const d = new Date(dbData[dateCol]);
             const partyData = type === 'purchase' ? dbData.suppliers : dbData.customers;
             const itemsData = type === 'purchase' ? dbData.purchase_items : dbData.sale_items;
+            const formattedDate = d.toLocaleString('en-GB', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
-            setData({
+            const mappedData = {
               receiptNo: dbData.receipt_no || dbData.challan_no || dbData.id.substring(0, 8).toUpperCase(),
               amount: Number(dbData.total_amount),
-              date: d.toLocaleString('en-GB', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+              date: formattedDate,
               paymentType: dbData.payment_method === 'cash' ? 'নগদ টাকা' : 'বাকি',
               paymentStatus: Number(dbData.due_amount) <= 0 ? 'পরিশোধিত' : 'বাকি আছে',
               discount: Number(dbData.discount) || 0,
               deliveryCharge: Number(dbData.delivery_charge) || 0,
               partyName: partyData?.name || 'দেওয়া হয়নি',
-              partyBalance: 0,
+              partyBalance: Number(partyData?.due_balance) || 0,
               note: dbData.note || '',
               items: itemsData?.map((i: any) => ({
                 name: i.products?.name || 'পণ্য নেই',
-                qty: i.quantity,
-                rate: i.rate,
+                qty: Number(i.quantity),
+                rate: Number(i.rate),
                 image_url: i.products?.image_url || ''
               })) || []
+            };
+            setData(mappedData);
+
+            // 📄 রিসিপ্ট মডালের জন্য সম্পূর্ণ ডেটা ম্যাপিং
+            setReceiptData({
+              invoiceNo: mappedData.receiptNo,
+              date: formattedDate,
+              status: mappedData.paymentStatus === 'পরিশোধিত' ? 'Paid' : 'Due',
+              shopName: activeBusiness?.name || 'DREAM AGRO',
+              shopAddress: (activeBusiness as any)?.address || 'N/A',
+              shopPhone: (activeBusiness as any)?.phone || 'N/A',
+              shopEmail: (activeBusiness as any)?.email || 'N/A',
+              customerName: partyData?.name || 'সাধারণ কাস্টমার',
+              proprietor: partyData?.proprietor || 'N/A',
+              customerPhone: partyData?.phone || 'N/A',
+              customerAddress: partyData?.address || 'N/A',
+              marketName: partyData?.market_name || 'N/A',
+              officerName: user?.user_metadata?.name || user?.email || 'অফিসার',
+              officerPhone: user?.user_metadata?.phone || 'N/A',
+              officerEmail: user?.email || 'N/A',
+              receiptTime: formattedDate,
+              vehicleNo: dbData.vehicle_no || 'N/A',
+              driverName: dbData.driver_name || 'N/A',
+              driverPhone: dbData.driver_phone || 'N/A',
+              transportRent: Number(dbData.delivery_charge) || 0,
+              items: itemsData?.map((i: any) => ({
+                id: i.id || Math.random().toString(),
+                name: i.products?.name || 'পণ্য',
+                category: i.products?.categories?.name || 'সাধারণ',
+                quantity: Number(i.quantity),
+                unit: i.products?.unit || 'পিস',
+                unitPrice: Number(i.rate),
+                totalPrice: Number(i.total)
+              })) || [],
+              totalBags: 0,
+              totalPieces: itemsData?.reduce((acc: number, curr: any) => acc + Number(curr.quantity), 0) || 0,
+              subtotal: Number(dbData.total_amount) + Number(dbData.discount) - Number(dbData.delivery_charge),
+              discount: Number(dbData.discount) || 0,
+              grandTotal: Number(dbData.total_amount),
+              paidAmount: Number(dbData.paid_amount),
+              dueAmount: Number(dbData.due_amount),
+              paidInWords: numberToWordsBn(Number(dbData.paid_amount)),
+              shopDescription: 'ক্রয়বিক্রয় ও পরিষেবা',
+              tableNote: '* ডেলিভারির সময় পণ্যের বস্তা ও ওজন সঠিকভাবে বুঝে নেওয়া হলো।',
+              footerText1: 'ধন্যবাদ!',
+              footerText2: 'Powered by Hishabpati',
+              note: dbData.note || ''
             });
           }
         }
@@ -90,7 +192,7 @@ export default function TransactionDetailsPage({ onBack, type = 'purchase', tran
     };
 
     fetchDetails();
-  }, [transactionId, type, isDemoMode, activeBusiness?.id]);
+  }, [transactionId, type, isDemoMode, activeBusiness?.id, user]);
 
   if (isLoading) {
     return (
@@ -110,7 +212,7 @@ export default function TransactionDetailsPage({ onBack, type = 'purchase', tran
   }
 
   return (
-    <div className="h-[100dvh] bg-[#EFF6F3] text-[#0F2A3D] font-serif flex flex-col overflow-hidden w-full">
+    <div className="h-[100dvh] bg-[#EFF6F3] text-[#0F2A3D] font-serif flex flex-col overflow-hidden w-full relative">
       
       <header className="bg-gradient-to-r from-[#0B5C47] to-[#062D5E] text-white shadow-md shrink-0 z-40">
         <div className="px-3 py-2.5 flex items-center gap-3">
@@ -205,11 +307,20 @@ export default function TransactionDetailsPage({ onBack, type = 'purchase', tran
         </div>
 
         <div className="grid grid-cols-2 gap-2 mt-1">
-          <button className="bg-[#F3F4F6] border border-gray-200 rounded-xl p-3 flex items-center justify-center gap-2 shadow-sm active:scale-95 transition">
+          {/* ✅ প্রিন্ট বাটনে ক্লিক করলে মডাল ওপেন হবে */}
+          <button 
+            onClick={() => setIsReceiptOpen(true)}
+            className="bg-[#F3F4F6] border border-gray-200 rounded-xl p-3 flex items-center justify-center gap-2 shadow-sm active:scale-95 transition hover:bg-gray-100"
+          >
             <Printer size={20} className="text-gray-700" />
             <span className="font-bold text-xs text-gray-700">রিসিপ্ট প্রিন্ট করুন</span>
           </button>
-          <button className="bg-[#F3F4F6] border border-gray-200 rounded-xl p-3 flex items-center justify-center gap-2 shadow-sm active:scale-95 transition">
+          
+          {/* ✅ শেয়ার বাটনে ক্লিক করলেও একই মডাল ওপেন হবে, যেখানে শেয়ার অপশন আছে */}
+          <button 
+            onClick={() => setIsReceiptOpen(true)}
+            className="bg-[#F3F4F6] border border-gray-200 rounded-xl p-3 flex items-center justify-center gap-2 shadow-sm active:scale-95 transition hover:bg-gray-100"
+          >
             <Share2 size={20} className="text-gray-700" />
             <span className="font-bold text-xs text-gray-700">রিসিপ্ট শেয়ার</span>
           </button>
@@ -223,6 +334,16 @@ export default function TransactionDetailsPage({ onBack, type = 'purchase', tran
         )}
 
       </main>
+
+      {/* ✅ ৪. গ্লোবাল রিসিপ্ট মডাল */}
+      <ReceiptModal 
+        isOpen={isReceiptOpen} 
+        onClose={() => setIsReceiptOpen(false)} 
+        onCancel={() => setIsReceiptOpen(false)}
+        onFinalize={() => setIsReceiptOpen(false)} 
+        isSaving={false}
+        data={receiptData} 
+      />
     </div>
   );
 }

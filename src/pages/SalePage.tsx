@@ -7,10 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { demoProducts, demoCustomersDetailed } from '../lib/demoData';
 
-interface SaleProps {
-  onBack: () => void;
-  onNavigate: (screen: string) => void;
-}
+interface SaleProps { onBack: () => void; onNavigate: (screen: string) => void; }
 
 export default function SalePage({ onBack, onNavigate }: SaleProps) {
   const { isDemoMode } = useAppContext();
@@ -29,54 +26,31 @@ export default function SalePage({ onBack, onNavigate }: SaleProps) {
       try {
         if (isDemoMode) {
           setProducts(demoProducts.map(p => ({ 
-            id: p.id.toString(), 
-            name: p.name, 
-            category: p.category, 
-            company: p.company, 
-            stockQty: p.stock, 
-            rate: p.salePrice,
-            unit: 'পিস',
-            image_url: p.image_url
+            id: p.id.toString(), name: p.name, category: p.category, company: p.company, 
+            stockQty: p.stock, rate: p.salePrice, unit: 'পিস', image_url: p.image_url
           })));
           setCustomers(demoCustomersDetailed.map((c: any) => ({
-            id: c.id,
-            name: c.name,
-            phone: c.phone || '',
-            address: c.address || c.market_name || ''
+            id: c.id, name: c.name, phone: c.phone || '', address: c.address || c.market_name || ''
           })));
         } else {
-          // ✅ আলাদা আলাদা কোয়েরি করে ডেটা আনা হচ্ছে (রিলেশন ইস্যু এড়াতে)
           const [prodRes, catRes, compRes, custRes] = await Promise.all([
             supabase.from('products').select('*').eq('business_id', bizId),
-            supabase.from('categories').select('*').eq('business_id', bizId),
-            supabase.from('companies').select('*').eq('business_id', bizId),
-            supabase.from('customers').select('*').eq('business_id', bizId)
+            supabase.from('categories').select('*'),
+            supabase.from('companies').select('*'),
+            supabase.from('customers').select('*')
           ]);
 
           if (prodRes.data) {
             const cats = catRes.data || [];
             const comps = compRes.data || [];
-            
             setProducts(prodRes.data.map((p: any) => ({
-              id: p.id, 
-              name: p.name, 
-              // লোকাল ম্যাপিং করে ক্যাটাগরি ও কোম্পানি নাম বের করা হলো
+              id: p.id, name: p.name, 
               category: cats.find((c: any) => c.id === p.category_id)?.name || 'সাধারণ', 
               company: comps.find((c: any) => c.id === p.company_id)?.name || 'সাধারণ',
-              stockQty: p.stock_quantity || 0,
-              rate: p.sale_price || 0,
-              unit: p.unit || 'পিস',
-              image_url: p.image_url
+              stockQty: p.stock_quantity || 0, rate: p.sale_price || 0, unit: p.unit || 'পিস', image_url: p.image_url
             })));
           }
-          if (custRes.data) {
-            setCustomers(custRes.data.map((c: any) => ({
-              id: c.id,
-              name: c.name,
-              phone: c.phone || 'N/A',
-              address: c.address || 'N/A'
-            })));
-          }
+          if (custRes.data) setCustomers(custRes.data.map((c: any) => ({ id: c.id, name: c.name, phone: c.phone || 'N/A', address: c.address || 'N/A' })));
         }
       } catch (error) {
         console.error("Data fetch error:", error);
@@ -90,10 +64,7 @@ export default function SalePage({ onBack, onNavigate }: SaleProps) {
   const handleFinalizeSale = async (data: any) => {
     if (!isDemoMode) {
       const itemsJson = data.cart.map((item: any) => ({ 
-        product_id: item.id, 
-        quantity: Number(item.quantity) || 0, 
-        rate: Number(item.rate) || 0, 
-        total: (Number(item.quantity) || 0) * (Number(item.rate) || 0) 
+        product_id: item.id, quantity: Number(item.quantity) || 0, rate: Number(item.rate) || 0, total: (Number(item.quantity) || 0) * (Number(item.rate) || 0) 
       }));
       
       const { error } = await supabase.rpc('create_sale', {
@@ -109,22 +80,14 @@ export default function SalePage({ onBack, onNavigate }: SaleProps) {
         p_items: itemsJson
       });
       
-      if (error) {
-        alert("সেভ করতে সমস্যা: " + error.message);
-        throw error;
-      }
+      if (error) { alert("সেভ করতে সমস্যা: " + error.message); throw error; }
     }
     alert('বিক্রি সফলভাবে সম্পন্ন হয়েছে!');
     onBack(); 
   };
 
   if (isDataLoading) {
-    return (
-      <div className="h-[100dvh] flex flex-col items-center justify-center bg-da-bg">
-        <Loader2 className="animate-spin text-da-green mb-3" size={32}/>
-        <p className="font-bold text-da-textMuted">ডেটা লোড হচ্ছে...</p>
-      </div>
-    );
+    return <div className="h-[100dvh] flex flex-col items-center justify-center bg-da-bg"><Loader2 className="animate-spin text-da-green mb-3" size={32}/><p className="font-bold text-da-textMuted">ডেটা লোড হচ্ছে...</p></div>;
   }
 
   return (

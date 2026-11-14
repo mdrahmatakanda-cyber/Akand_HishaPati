@@ -299,3 +299,93 @@ export const demoCustomersDetailed = [
     due_balance: 0 
   }
 ];
+
+// ডিপো ট্রান্সফারের জন্য ডেমু ডাটা
+export const demoDepots = [
+  { id: 'dep1', name: 'কেন্দ্রীয় গুদাম', phone: '01700000000', address: 'হেড অফিস' },
+  { id: 'dep2', name: 'গাজীপুর ডিপো', phone: '01700000001', address: 'গাজীপুর' }
+];
+
+export const demoDepotStockHistory = [
+  {
+    id: 'h1',
+    type: 'stock_in',
+    date: '14 Nov 2026, 10:30 AM',
+    reference_no: 'PUR-10023',
+    party_name: 'ACI Limited',
+    amount: 25000,
+    items: [
+      { name: 'গ্রোয়ার ফিড', qty: 10, unit: 'বস্তা' },
+      { name: 'ক্যালসিয়াম পাউডার', qty: 5, unit: 'পিস' }
+    ]
+  },
+  {
+    id: 'h2',
+    type: 'sale',
+    date: '13 Nov 2026, 04:15 PM',
+    reference_no: 'INV-8821',
+    party_name: 'মোল্লা পোল্ট্রি',
+    amount: 8500,
+    items: [
+      { name: 'গ্রোয়ার ফিড', qty: 4, unit: 'বস্তা' }
+    ]
+  },
+  {
+    id: 'h3',
+    type: 'transfer',
+    date: '12 Nov 2026, 11:00 AM',
+    reference_no: 'TRN-5521',
+    party_name: 'গাজীপুর ডিপো',
+    amount: 15000,
+    items: [
+      { name: 'রুই পোনা খাদ্য', qty: 15, unit: 'ব্যাগ' }
+    ]
+  },
+  {
+    id: 'h4',
+    type: 'stock_in',
+    date: '10 Nov 2026, 09:00 AM',
+    reference_no: 'PUR-10022',
+    party_name: 'স্কয়ার ফিড',
+    amount: 40000,
+    items: [
+      { name: 'লেয়ার ফিড', qty: 20, unit: 'বস্তা' }
+    ]
+  }
+];
+
+// ইউজার ও রোল ম্যানেজমেন্টের ডেমু ডাটা
+export const demoUsers = [
+  { id: 'u1', name: 'মিওয়ান', role: 'OWNER', phone: '01752005057', status: 'Active', address: 'ঢাকা', email: 'owner@example.com', joinDate: '2026-01-01' },
+  { id: 'u2', name: 'রফিকুল ইসলাম', role: 'MANAGER', phone: '01911000001', status: 'Active', address: 'গাজীপুর', email: 'rafiq@example.com', joinDate: '2026-05-15' },
+];
+
+export const demoRoles = [
+  { 
+    id: 'r1', 
+    name: 'OWNER', 
+    permissions: { 'কেনা': true, 'বিক্রি করুন': true, 'কেনার খাতা': true, 'বিক্রির খাতা': true, 'বাকি': true, 'খরচ': true, 'যোগাযোগ': true, 'প্রোডাক্ট লিস্ট': true, 'স্টকের হিসাব': true, 'মার্কেটিং': true },
+    settings: { 'Shop Reset': true, 'রিসাইকেল বিন': true, 'শপ এডিট': true, 'বিকাশ/নগদ কিউ আর': true }
+  },
+  { 
+    id: 'r2', 
+    name: 'MANAGER', 
+    permissions: { 'কেনা': true, 'বিক্রি করুন': true, 'কেনার খাতা': true, 'বিক্রির খাতা': true, 'বাকি': true, 'খরচ': true, 'যোগাযোগ': true, 'প্রোডাক্ট লিস্ট': true, 'স্টকের হিসাব': true, 'মার্কেটিং': false },
+    settings: { 'Shop Reset': false, 'রিসাইকেল বিন': true, 'শপ এডিট': false, 'বিকাশ/নগদ কিউ আর': true }
+  }
+];
+
+export const demoStaffMembers = [
+  { id: 's1', name: 'মিওয়ান', role: 'OWNER', phone: '01752005057', email: 'owner@demo.com', status: 'Active', join_date: '2026-01-01', business_id: 'demo-biz-1' },
+  { id: 's2', name: 'রফিকুল ইসলাম', role: 'MANAGER', phone: '01911000001', email: 'rafiq@demo.com', status: 'Active', join_date: '2026-05-15', business_id: 'demo-biz-1' },
+];
+
+export const demoDeletedItems = [
+  { id: 'del-sale-1',  type: 'Sale',     name: 'রিসিপ্ট # GVMTQX7S4WGR89W', amount: 100,  deletedAt: '2026-11-07T10:30:00' },
+  { id: 'del-pur-1',   type: 'Purchase', name: 'রিসিপ্ট # JTMPBC953J7J20P', amount: 280,  deletedAt: '2026-11-06T16:15:00' },
+  { id: 'del-prod-1',  type: 'Product',  name: 'টেস্ট প্রোডাক্ট',           amount: 0,    deletedAt: '2026-11-05T11:20:00' },
+  { id: 'del-cust-1',  type: 'Customer', name: 'রহিম এন্টারপ্রাইজ',         amount: 0,    deletedAt: '2026-11-04T09:45:00' },
+  { id: 'del-sup-1',   type: 'Supplier', name: 'মোল্লা পোল্ট্রি',           amount: 0,    deletedAt: '2026-11-03T14:10:00' },
+  { id: 'del-exp-1',   type: 'Expense',  name: 'গোডাউন ভাড়া',              amount: 5000, deletedAt: '2026-11-02T10:00:00' },
+  { id: 'del-trn-1',   type: 'Transfer', name: 'ট্রান্সফার # TR-2026-011',  amount: 0,    deletedAt: '2026-11-01T13:00:00' },
+];

@@ -4,7 +4,7 @@ import {
   User, Phone, MapPin, Wallet, 
   ReceiptText, Clock, CheckCircle2, AlertTriangle, 
   Image as ImageIcon, FileText, Truck, Edit3,
-  Map, Table, Users, Shield, Eye, EyeOff, 
+  Map, Table, Users, Shield, Trash2,
   ChevronDown, CheckSquare, Square, Navigation, UserPlus
 } from 'lucide-react';
 import { toBangla } from '../../lib/utils';
@@ -45,8 +45,10 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
   const [isVanLoadModalOpen, setIsVanLoadModalOpen] = useState(false);
   const [isCashModalOpen, setIsCashModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false); // ✅ নতুন স্টেট
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false); // ✅ নতুন স্টেট
   
   // রোল স্টেট
   const [rolesList, setRolesList] = useState<any[]>([]);
@@ -59,7 +61,7 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
     status: 'Active', commission_type: 'Officer Commission', role: 'Default Officer', 
     isAdvanced: false, company_access: 'All Companies', market_access: 'All Markets'
   });
-  const [showPassword, setShowPassword] = useState(false);
+
   const [editOfficerData, setEditOfficerData] = useState<any>({});
   
   // ভ্যান ও ক্যাশ স্টেট
@@ -86,14 +88,27 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
         setOfficers(demoOfficers);
       } else {
         if (!activeBusiness?.id) return;
-        const { data, error } = await supabase
+        
+        // ✅ অফিসার লোড (ডিলিট হওয়া বাদ দিয়ে)
+        const { data: empData, error: empError } = await supabase
           .from('employees')
           .select('*')
           .eq('business_id', activeBusiness.id)
+          .is('deleted_at', null) // সফট ডিলিট ফিল্টার
           .order('created_at', { ascending: false });
         
-        if (error) throw error;
-        setOfficers(data || []);
+        if (empError) throw empError;
+        setOfficers(empData || []);
+
+        // রোল লোড
+        const { data: roleData, error: roleError } = await supabase
+          .from('officer_roles')
+          .select('*')
+          .eq('business_id', activeBusiness.id);
+
+        if (!roleError && roleData) {
+          setRolesList(roleData);
+        }
       }
     } catch (error: any) {
       console.error(error);
@@ -125,19 +140,62 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
     }));
   };
 
-  const handleSaveRole = () => {
+  const handleSaveRole = async () => {
     if (!roleName) return showToast('রোলের নাম আবশ্যক', 'error');
-    setRolesList([...rolesList, { id: Date.now(), name: roleName, permissions }]);
-    setIsRoleModalOpen(false);
-    setRoleName('');
-    setPermissions({});
-    showToast('নতুন রোল তৈরি হয়েছে!');
+    setIsSaving(true);
+    try {
+      if (isDemoMode) {
+        setRolesList([...rolesList, { id: Date.now().toString(), name: roleName, permissions }]);
+      } else {
+        if (!activeBusiness?.id) return;
+        const { error } = await supabase.from('officer_roles').insert([{
+          business_id: activeBusiness.id,
+          name: roleName,
+          permissions
+        }]);
+        if (error) throw error;
+        await fetchOfficers();
+      }
+      setIsRoleModalOpen(false);
+      setRoleName('');
+      setPermissions({});
+      showToast('নতুন রোল তৈরি হয়েছে!');
+    } catch (error: any) {
+      showToast(error.message, 'error');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleAddOfficer = async () => {
     if (!newOfficer.name || !newOfficer.phone) return showToast('নাম এবং মোবাইল নম্বর আবশ্যক', 'error');
     setIsSaving(true);
     try {
+      let imageUrl = '';
+      let docUrl = '';
+
+      // ফাইল আপলোড (রিয়েল মোডে)
+      if (!isDemoMode && activeBusiness?.id) {
+        if (officerImage) {
+          const fileExt = officerImage.name.split('.').pop();
+          const fileName = `officer-${Date.now()}.${fileExt}`;
+          const { error: uploadError } = await supabase.storage.from('avatars').upload(fileName, officerImage);
+          if (!uploadError) {
+            const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(fileName);
+            imageUrl = urlData.publicUrl;
+          }
+        }
+        if (officerDoc) {
+          const fileExt = officerDoc.name.split('.').pop();
+          const fileName = `doc-${Date.now()}.${fileExt}`;
+          const { error: uploadError } = await supabase.storage.from('avatars').upload(fileName, officerDoc);
+          if (!uploadError) {
+            const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(fileName);
+            docUrl = urlData.publicUrl;
+          }
+        }
+      }
+
       if (isDemoMode) {
         const newO = {
           id: Date.now().toString(),
@@ -152,16 +210,27 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
         setOfficers([newO, ...officers]);
       } else {
         if (!activeBusiness?.id) return;
+        
         const { error } = await supabase.from('employees').insert([{
           business_id: activeBusiness.id,
           name: newOfficer.name,
           phone: newOfficer.phone,
-          role: newOfficer.role || 'sr',
+          role: newOfficer.role === 'Default Officer' ? 'sr' : 'sr',
+          area: newOfficer.area,
           target_amount: Number(newOfficer.target_amount) || 0,
-          commission_rate: Number(newOfficer.commission_rate) || 0
+          commission_rate: Number(newOfficer.commission_rate) || 0,
+          commission_type: newOfficer.commission_type,
+          status: newOfficer.status,
+          van_stock_value: 0,
+          cash_in_hand: 0,
+          image_url: imageUrl,
+          documents: docUrl ? [docUrl] : [],
+          company_access: newOfficer.company_access,
+          market_access: newOfficer.market_access,
+          is_advanced: newOfficer.isAdvanced
         }]);
         if (error) throw error;
-        fetchOfficers();
+        await fetchOfficers();
       }
       setIsAddModalOpen(false);
       setNewOfficer({ name: '', phone: '', password: '', area: '', target_amount: '', commission_rate: '', status: 'Active', commission_type: 'Officer Commission', role: 'Default Officer', isAdvanced: false, company_access: 'All Companies', market_access: 'All Markets' });
@@ -180,14 +249,37 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
     setIsSaving(true);
     try {
       const amount = Number(vanLoadAmount);
-      const updated = officers.map(o => 
-        o.id === selectedOfficer.id ? { ...o, van_stock_value: o.van_stock_value + amount } : o
-      );
-      setOfficers(updated);
-      setSelectedOfficer(updated.find(o => o.id === selectedOfficer.id));
+      
+      if (isDemoMode) {
+        const updated = officers.map(o => 
+          o.id === selectedOfficer.id ? { ...o, van_stock_value: o.van_stock_value + amount } : o
+        );
+        setOfficers(updated);
+        setSelectedOfficer(updated.find(o => o.id === selectedOfficer.id));
+      } else {
+        const { error: updateError } = await supabase
+          .from('employees')
+          .update({ van_stock_value: (selectedOfficer.van_stock_value || 0) + amount })
+          .eq('id', selectedOfficer.id);
+        
+        if (updateError) throw updateError;
+
+        await supabase.from('officer_transactions').insert([{
+          business_id: activeBusiness?.id,
+          employee_id: selectedOfficer.id,
+          type: 'van_load',
+          amount: amount,
+          note: 'ভ্যানে মাল লোডিং'
+        }]);
+
+        await fetchOfficers(); 
+        setSelectedOfficer({ ...selectedOfficer, van_stock_value: (selectedOfficer.van_stock_value || 0) + amount });
+      }
       setIsVanLoadModalOpen(false);
       setVanLoadAmount('');
       showToast('ভ্যানে মাল লোড হয়েছে!');
+    } catch (error: any) {
+      showToast(error.message, 'error');
     } finally { setIsSaving(false); }
   };
 
@@ -196,14 +288,37 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
     setIsSaving(true);
     try {
       const amount = Number(cashDepositAmount);
-      const updated = officers.map(o => 
-        o.id === selectedOfficer.id ? { ...o, cash_in_hand: o.cash_in_hand - amount } : o
-      );
-      setOfficers(updated);
-      setSelectedOfficer(updated.find(o => o.id === selectedOfficer.id));
+      
+      if (isDemoMode) {
+        const updated = officers.map(o => 
+          o.id === selectedOfficer.id ? { ...o, cash_in_hand: o.cash_in_hand - amount } : o
+        );
+        setOfficers(updated);
+        setSelectedOfficer(updated.find(o => o.id === selectedOfficer.id));
+      } else {
+        const { error: updateError } = await supabase
+          .from('employees')
+          .update({ cash_in_hand: (selectedOfficer.cash_in_hand || 0) - amount })
+          .eq('id', selectedOfficer.id);
+        
+        if (updateError) throw updateError;
+
+        await supabase.from('officer_transactions').insert([{
+          business_id: activeBusiness?.id,
+          employee_id: selectedOfficer.id,
+          type: 'cash_deposit',
+          amount: amount,
+          note: 'ক্যাশ জমা'
+        }]);
+
+        await fetchOfficers();
+        setSelectedOfficer({ ...selectedOfficer, cash_in_hand: (selectedOfficer.cash_in_hand || 0) - amount });
+      }
       setIsCashModalOpen(false);
       setCashDepositAmount('');
       showToast('ক্যাশ জমা সফল হয়েছে!');
+    } catch (error: any) {
+      showToast(error.message, 'error');
     } finally { setIsSaving(false); }
   };
 
@@ -219,16 +334,75 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
     if (!editOfficerData.name || !editOfficerData.phone) return showToast('নাম এবং মোবাইল আবশ্যক', 'error');
     setIsSaving(true);
     try {
-      const updated = officers.map(o => o.id === selectedOfficer.id ? {
-        ...o, ...editOfficerData,
-        target_amount: Number(editOfficerData.target_amount) || 0,
-        commission_rate: Number(editOfficerData.commission_rate) || 0
-      } : o);
-      setOfficers(updated);
-      setSelectedOfficer(updated.find(o => o.id === selectedOfficer.id));
+      if (isDemoMode) {
+        const updated = officers.map(o => o.id === selectedOfficer.id ? {
+          ...o, ...editOfficerData,
+          target_amount: Number(editOfficerData.target_amount) || 0,
+          commission_rate: Number(editOfficerData.commission_rate) || 0
+        } : o);
+        setOfficers(updated);
+        setSelectedOfficer(updated.find(o => o.id === selectedOfficer.id));
+      } else {
+        const { error } = await supabase
+          .from('employees')
+          .update({
+            name: editOfficerData.name,
+            phone: editOfficerData.phone,
+            area: editOfficerData.area,
+            target_amount: Number(editOfficerData.target_amount) || 0,
+            commission_rate: Number(editOfficerData.commission_rate) || 0,
+          })
+          .eq('id', selectedOfficer.id);
+          
+        if (error) throw error;
+        await fetchOfficers();
+        setSelectedOfficer({ ...selectedOfficer, ...editOfficerData });
+      }
       setIsEditingProfile(false);
       showToast('অফিসারের তথ্য আপডেট হয়েছে!');
+    } catch (error: any) {
+      showToast(error.message, 'error');
     } finally { setIsSaving(false); }
+  };
+
+  // ✅ নতুন: অফিসার ডিলিট করার ফাংশন (Cascade Soft Delete)
+  const handleDeleteOfficer = async () => {
+    if (!selectedOfficer) return;
+    setIsDeleting(true);
+    try {
+      const now = new Date().toISOString();
+      
+      if (isDemoMode) {
+        setOfficers(prev => prev.filter(o => o.id !== selectedOfficer.id));
+      } else {
+        // ১. অফিসারের সব লেনদেন সফট-ডিলিট করুন
+        const { error: transError } = await supabase
+          .from('officer_transactions')
+          .update({ deleted_at: now })
+          .eq('employee_id', selectedOfficer.id);
+          
+        if (transError) throw transError;
+
+        // ২. অফিসার প্রোফাইল সফট-ডিলিট করুন
+        const { error: empError } = await supabase
+          .from('employees')
+          .update({ deleted_at: now })
+          .eq('id', selectedOfficer.id);
+          
+        if (empError) throw empError;
+        
+        await fetchOfficers();
+      }
+      
+      setIsDeleteModalOpen(false);
+      setIsProfileModalOpen(false);
+      setSelectedOfficer(null);
+      showToast('অফিসার এবং তার লেনদেনসমূহ রিসাইকেল বিনে সরানো হয়েছে!');
+    } catch (error: any) {
+      showToast('ডিলিট করতে সমস্যা: ' + error.message, 'error');
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   return (
@@ -249,7 +423,7 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
             <button onClick={selectedOfficer ? () => setSelectedOfficer(null) : onBack} className="p-1.5 bg-white/10 rounded-lg hover:bg-white/20 transition">
               <ArrowLeft size={20} />
             </button>
-            <h1 className="font-bold text-lg">{selectedOfficer ? 'অফিসার লেজার' : 'অফিসার ম্যানেজমেন্ট'}</h1>
+            <h1 className="font-bold text-lg">{selectedOfficer ? 'অফিসার বিস্তারিত' : 'অফিসার ম্যানেজমেন্ট'}</h1>
           </div>
           {selectedOfficer && (
             <button onClick={() => openProfileModal(selectedOfficer)} className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 px-2.5 py-1.5 rounded-lg transition active:scale-95">
@@ -374,7 +548,7 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
           </>
         )}
 
-        {/* ==================== লেজার ভিউ ==================== */}
+        {/* ==================== বিস্তারিত ভিউ ==================== */}
         {selectedOfficer && (
           <>
             <div className="bg-white p-4 rounded-xl border border-da-cardBorder shadow-sm flex flex-col items-center text-center shrink-0">
@@ -430,7 +604,7 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
 
       </main>
 
-      {/* Add Officer Modal (সব ফিল্ডসহ) */}
+      {/* Add Officer Modal */}
       {isAddModalOpen && (
         <div className="fixed inset-0 bg-black/50 z-[100] flex justify-center items-end sm:items-center backdrop-blur-sm">
           <div className="bg-white w-full h-[90dvh] sm:h-auto sm:max-h-[90vh] sm:max-w-md sm:rounded-2xl rounded-t-2xl overflow-hidden flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-300">
@@ -450,16 +624,7 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
                   <input type="text" value={newOfficer.phone} onChange={e => setNewOfficer({...newOfficer, phone: e.target.value})} className="w-full bg-white border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" />
                 </div>
               </div>
-              <div>
-                <label className="text-[11px] font-bold text-da-textMuted mb-1 block">পাসওয়ার্ড</label>
-                <div className="relative">
-                  <input type={showPassword ? "text" : "password"} value={newOfficer.password} onChange={e => setNewOfficer({...newOfficer, password: e.target.value})} className="w-full bg-white border border-da-cardBorder rounded-lg p-2 pr-8 text-sm outline-none focus:border-da-depotBlue" />
-                  <button onClick={() => setShowPassword(!showPassword)} className="absolute right-2 top-1/2 -translate-y-1/2 text-da-textMuted">
-                    {showPassword ? <EyeOff size={14}/> : <Eye size={14}/>}
-                  </button>
-                </div>
-              </div>
-
+              
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-[11px] font-bold text-da-textMuted mb-1 block">মাসিক টার্গেট</label>
@@ -512,23 +677,17 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
                   <div className="mt-2 flex flex-col gap-2 animate-in slide-in-from-top-1 duration-200">
                     <div>
                       <label className="text-[10px] font-bold text-da-textDark mb-1 block">কোম্পানি অ্যাক্সেস</label>
-                      <div className="relative">
-                        <select value={newOfficer.company_access} onChange={e => setNewOfficer({...newOfficer, company_access: e.target.value})} className="w-full bg-white border border-da-depotBlue/30 rounded-lg px-2 py-1.5 text-[11px] font-bold text-da-depotBlue outline-none appearance-none">
-                          <option>All Companies (Full Access)</option>
-                          <option>Specific Companies</option>
-                        </select>
-                        <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-da-depotBlue" />
-                      </div>
+                      <select value={newOfficer.company_access} onChange={e => setNewOfficer({...newOfficer, company_access: e.target.value})} className="w-full bg-white border border-da-depotBlue/30 rounded-lg px-2 py-1.5 text-[11px] font-bold text-da-depotBlue outline-none">
+                        <option>All Companies</option>
+                        <option>Specific Companies</option>
+                      </select>
                     </div>
                     <div>
                       <label className="text-[10px] font-bold text-da-textDark mb-1 block">রোড ও মার্কেট</label>
-                      <div className="relative">
-                        <select value={newOfficer.market_access} onChange={e => setNewOfficer({...newOfficer, market_access: e.target.value})} className="w-full bg-white border border-da-depotBlue/30 rounded-lg px-2 py-1.5 text-[11px] font-bold text-da-depotBlue outline-none appearance-none">
-                          <option>All Routes & Markets (Full Access)</option>
-                          <option>Specific Markets</option>
-                        </select>
-                        <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-da-depotBlue" />
-                      </div>
+                      <select value={newOfficer.market_access} onChange={e => setNewOfficer({...newOfficer, market_access: e.target.value})} className="w-full bg-white border border-da-depotBlue/30 rounded-lg px-2 py-1.5 text-[11px] font-bold text-da-depotBlue outline-none">
+                        <option>All Markets</option>
+                        <option>Specific Markets</option>
+                      </select>
                     </div>
                   </div>
                 )}
@@ -612,7 +771,9 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
 
             <div className="p-2.5 bg-da-depotBg border-t border-da-cardBorder flex gap-2 shrink-0">
               <button onClick={() => setIsRoleModalOpen(false)} className="flex-1 bg-white border border-da-cardBorder text-da-textMuted py-2 rounded-lg font-bold text-xs">বাতিল</button>
-              <button onClick={handleSaveRole} className="flex-1 bg-da-depotBlue text-white py-2 rounded-lg font-bold text-xs shadow-md">রোল তৈরি করুন</button>
+              <button onClick={handleSaveRole} disabled={isSaving} className="flex-1 bg-da-depotBlue text-white py-2 rounded-lg font-bold text-xs shadow-md flex justify-center items-center">
+                 {isSaving ? <Loader2 size={16} className="animate-spin"/> : 'রোল তৈরি করুন'}
+              </button>
             </div>
           </div>
         </div>
@@ -693,13 +854,18 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
         </div>
       )}
 
-      {/* Profile Modal (View & Edit) */}
+      {/* Profile Modal (View & Edit & Delete) */}
       {isProfileModalOpen && selectedOfficer && (
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90dvh] flex flex-col">
             <div className="bg-da-depotNavy p-3 flex justify-between items-center text-white shrink-0">
               <h2 className="font-bold text-sm flex items-center gap-2"><User size={16}/> অফিসার প্রোফাইল</h2>
               <div className="flex items-center gap-2">
+                {/* ✅ ডিলিট বাটন যোগ করা হলো */}
+                <button onClick={() => setIsDeleteModalOpen(true)} className="flex items-center gap-1 bg-red-500 hover:bg-red-600 px-2 py-1 rounded text-xs font-bold transition">
+                  <Trash2 size={12}/> ডিলিট
+                </button>
+                
                 {!isEditingProfile ? (
                   <button onClick={() => setIsEditingProfile(true)} className="flex items-center gap-1 bg-white/20 hover:bg-white/30 px-2 py-1 rounded text-xs font-bold transition">
                     <Edit3 size={12}/> এডিট
@@ -826,6 +992,27 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
               ) : (
                 <button onClick={() => setIsProfileModalOpen(false)} className="w-full bg-da-depotNavy text-white py-2.5 rounded-xl font-bold shadow-md">বন্ধ করুন</button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============ ডিলিট কনফার্মেশন মডাল ============ */}
+      {isDeleteModalOpen && selectedOfficer && (
+        <div className="fixed inset-0 bg-black/70 z-[120] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-xs overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="p-5 text-center">
+              <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <AlertTriangle size={26} className="text-red-600" />
+              </div>
+              <h3 className="font-bold text-base text-da-textDark mb-1">অফিসার ডিলিট করবেন?</h3>
+              <p className="text-xs text-da-textMuted">"{selectedOfficer.name}" এবং তার সব লেনদেন রিসাইকেল বিনে জমা হবে। সেখান থেকে যেকোনো সময় ফিরিয়ে আনা যাবে।</p>
+            </div>
+            <div className="p-3 border-t border-da-cardBorder bg-da-depotBg flex gap-2">
+              <button onClick={() => setIsDeleteModalOpen(false)} disabled={isDeleting} className="flex-1 bg-white border border-da-cardBorder text-da-textMuted py-2 rounded-xl font-bold disabled:opacity-50">বাতিল</button>
+              <button onClick={handleDeleteOfficer} disabled={isDeleting} className="flex-1 bg-red-500 text-white py-2 rounded-xl font-bold shadow-md flex justify-center items-center gap-1.5 disabled:opacity-60">
+                {isDeleting ? <Loader2 size={14} className="animate-spin"/> : <Trash2 size={14}/>} ডিলিট
+              </button>
             </div>
           </div>
         </div>

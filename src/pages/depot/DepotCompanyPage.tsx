@@ -2,13 +2,14 @@ import { useState, useEffect, useRef } from 'react';
 import { 
   ArrowLeft, HelpCircle, Plus, Search, Building2, Truck, 
   X, Loader2, Phone, MapPin, FileText, Image as ImageIcon, Edit3,
-  Clock, ArrowRightLeft, PackagePlus, Wallet
+  Clock, ArrowRightLeft, PackagePlus, Wallet, Trash2, AlertTriangle
 } from 'lucide-react';
 import { toBangla } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../context/AuthContext';
 import { useAppContext } from '../../context/AppContext';
 import { demoCompanyStats, demoCompanyActivities, demoSupplierStats, demoSupplierActivities } from '../../lib/demoData';
+import PremiumToast from '../../components/PremiumToast';
 
 interface Props {
   onBack: () => void;
@@ -55,6 +56,8 @@ export default function DepotCompanyPage({ onBack, onNavigate }: Props) {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteConfirmType, setDeleteConfirmType] = useState<'company' | 'supplier' | null>(null);
   
   const [searchQuery, setSearchQuery] = useState('');
   
@@ -68,6 +71,10 @@ export default function DepotCompanyPage({ onBack, onNavigate }: Props) {
   const [showSupplierModal, setShowSupplierModal] = useState(false);
   const [isEditingCompany, setIsEditingCompany] = useState(false);
   const [isEditingSupplier, setIsEditingSupplier] = useState(false);
+
+  // টোস্ট স্টেট
+  const [toast, setToast] = useState<{ show: boolean, message: string, type: 'success' | 'error' }>({ show: false, message: '', type: 'success' });
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => setToast({ show: true, message, type });
 
   // ফর্ম স্টেট
   const [companyForm, setCompanyForm] = useState({ 
@@ -103,8 +110,8 @@ export default function DepotCompanyPage({ onBack, onNavigate }: Props) {
         if (!activeBusiness?.id) return;
 
         const [compRes, supRes] = await Promise.all([
-          supabase.from('companies').select('*').eq('business_id', activeBusiness.id).order('created_at', { ascending: false }),
-          supabase.from('suppliers').select('*').eq('business_id', activeBusiness.id).order('created_at', { ascending: false })
+          supabase.from('companies').select('*').eq('business_id', activeBusiness.id).is('deleted_at', null).order('created_at', { ascending: false }),
+          supabase.from('suppliers').select('*').eq('business_id', activeBusiness.id).is('deleted_at', null).order('created_at', { ascending: false })
         ]);
         
         if (compRes.error) throw compRes.error;
@@ -114,7 +121,7 @@ export default function DepotCompanyPage({ onBack, onNavigate }: Props) {
         setSuppliers(supRes.data || []);
       }
     } catch (error: any) {
-      alert("ডাটা লোড করতে সমস্যা হয়েছে: " + error.message);
+      showToast("ডাটা লোড করতে সমস্যা হয়েছে: " + error.message, 'error');
     } finally {
       setIsLoading(false);
     }
@@ -126,7 +133,7 @@ export default function DepotCompanyPage({ onBack, onNavigate }: Props) {
 
   // --- কোম্পানি সেভ ---
   const handleSaveCompany = async () => {
-    if (!companyForm.name || !companyForm.commission) return alert('কোম্পানির নাম এবং কমিশন % আবশ্যক');
+    if (!companyForm.name || !companyForm.commission) return showToast('কোম্পানির নাম এবং কমিশন % আবশ্যক', 'error');
     setIsSaving(true);
     try {
       if (isDemoMode) {
@@ -187,11 +194,11 @@ export default function DepotCompanyPage({ onBack, onNavigate }: Props) {
         if (data) setSelectedCompany(data);
       }
       
-      alert('কোম্পানি সফলভাবে সেভ হয়েছে!');
+      showToast('কোম্পানি সফলভাবে সেভ হয়েছে!');
       setShowCompanyModal(false);
       setIsEditingCompany(false);
     } catch (error: any) {
-      alert('সেভ করতে সমস্যা হয়েছে: ' + error.message);
+      showToast('সেভ করতে সমস্যা হয়েছে: ' + error.message, 'error');
     } finally {
       setIsSaving(false);
     }
@@ -199,7 +206,7 @@ export default function DepotCompanyPage({ onBack, onNavigate }: Props) {
 
   // --- সাপ্লায়ার সেভ ---
   const handleSaveSupplier = async () => {
-    if (!supplierForm.name) return alert('সাপ্লায়ারের নাম আবশ্যক');
+    if (!supplierForm.name) return showToast('সাপ্লায়ারের নাম আবশ্যক', 'error');
     setIsSaving(true);
     try {
       if (isDemoMode) {
@@ -242,11 +249,11 @@ export default function DepotCompanyPage({ onBack, onNavigate }: Props) {
         if (data) setSelectedSupplier(data);
       }
       
-      alert('সাপ্লায়ার সফলভাবে সেভ হয়েছে!');
+      showToast('সাপ্লায়ার সফলভাবে সেভ হয়েছে!');
       setShowSupplierModal(false);
       setIsEditingSupplier(false);
     } catch (error: any) {
-      alert('সেভ করতে সমস্যা হয়েছে: ' + error.message);
+      showToast('সেভ করতে সমস্যা হয়েছে: ' + error.message, 'error');
     } finally {
       setIsSaving(false);
     }
@@ -276,12 +283,68 @@ export default function DepotCompanyPage({ onBack, onNavigate }: Props) {
     setShowSupplierModal(true);
   };
 
+  // ডিলিট হ্যান্ডলার
+  const handleDeleteCompany = async () => {
+    if (!selectedCompany) return;
+    setIsDeleting(true);
+    try {
+      if (isDemoMode) {
+        setCompanies(prev => prev.filter(c => c.id !== selectedCompany.id));
+      } else {
+        const { error } = await supabase
+          .from('companies')
+          .update({ deleted_at: new Date().toISOString() })
+          .eq('id', selectedCompany.id);
+        if (error) throw error;
+        fetchData();
+      }
+      setSelectedCompany(null);
+      setDeleteConfirmType(null);
+      showToast('কোম্পানি ডিলিট হয়েছে!');
+    } catch (error: any) {
+      showToast(error.message, 'error');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleDeleteSupplier = async () => {
+    if (!selectedSupplier) return;
+    setIsDeleting(true);
+    try {
+      if (isDemoMode) {
+        setSuppliers(prev => prev.filter(s => s.id !== selectedSupplier.id));
+      } else {
+        const { error } = await supabase
+          .from('suppliers')
+          .update({ deleted_at: new Date().toISOString() })
+          .eq('id', selectedSupplier.id);
+        if (error) throw error;
+        fetchData();
+      }
+      setSelectedSupplier(null);
+      setDeleteConfirmType(null);
+      showToast('সাপ্লায়ার ডিলিট হয়েছে!');
+    } catch (error: any) {
+      showToast(error.message, 'error');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const filteredCompanies = companies.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
   const filteredSuppliers = suppliers.filter(s => s.name.toLowerCase().includes(searchQuery.toLowerCase()) || (s.phone && s.phone.includes(searchQuery)));
 
   return (
     <div className="h-[100dvh] bg-da-depotBg text-da-textDark font-serif flex flex-col overflow-hidden w-full relative">
       
+      <PremiumToast
+        show={toast.show}
+        message={toast.message}
+        type={toast.type}
+        onClose={() => setToast({ show: false, message: '', type: 'success' })}
+      />
+
       <header className="bg-da-depotNavy text-white shadow-md shrink-0 z-40">
         <div className="px-3 py-2.5 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -302,7 +365,7 @@ export default function DepotCompanyPage({ onBack, onNavigate }: Props) {
             </div>
           </div>
           {!selectedCompany && !selectedSupplier && (
-            <button onClick={() => alert('সাহায্য')} className="p-1.5 bg-white/10 rounded-lg hover:bg-white/20 transition"><HelpCircle size={18} /></button>
+            <button onClick={() => showToast('সাহায্য শীঘ্রই আসছে!', 'success')} className="p-1.5 bg-white/10 rounded-lg hover:bg-white/20 transition"><HelpCircle size={18} /></button>
           )}
         </div>
 
@@ -399,12 +462,17 @@ export default function DepotCompanyPage({ onBack, onNavigate }: Props) {
             
             <div className="bg-white p-3 rounded-xl border border-da-cardBorder shadow-sm relative">
               
-              {/* এডিট বাটন (উপরে ডান কোণায়) */}
-              <button onClick={() => openEditCompany(selectedCompany)} className="absolute top-3 right-3 flex items-center gap-1 text-da-depotBlue bg-da-depotBlue/10 px-2 py-1 rounded-md text-[10px] font-bold active:scale-95 transition">
-                <Edit3 size={12}/> এডিট
-              </button>
+              {/* এডিট ও ডিলিট বাটন (উপরে ডান কোণায়) */}
+              <div className="absolute top-3 right-3 flex items-center gap-1.5">
+                <button onClick={() => setDeleteConfirmType('company')} className="flex items-center gap-1 text-da-red bg-da-red/10 px-2 py-1 rounded-md text-[10px] font-bold active:scale-95 transition">
+                  <Trash2 size={12}/> ডিলিট
+                </button>
+                <button onClick={() => openEditCompany(selectedCompany)} className="flex items-center gap-1 text-da-depotBlue bg-da-depotBlue/10 px-2 py-1 rounded-md text-[10px] font-bold active:scale-95 transition">
+                  <Edit3 size={12}/> এডিট
+                </button>
+              </div>
 
-              <div className="flex items-center gap-2.5 mb-2.5 pr-16">
+              <div className="flex items-center gap-2.5 mb-2.5 pr-24">
                 <div className="w-10 h-10 bg-da-depotBg rounded-lg flex items-center justify-center text-da-depotBlue border border-da-cardBorder overflow-hidden shrink-0">
                   {selectedCompany.image_url ? <img src={selectedCompany.image_url} alt="" className="w-full h-full object-cover"/> : <Building2 size={20}/>}
                 </div>
@@ -448,12 +516,12 @@ export default function DepotCompanyPage({ onBack, onNavigate }: Props) {
               )}
             </div>
 
-                        {/* ৩টি অ্যাকশন বাটন */}
+            {/* ৩টি অ্যাকশন বাটন */}
             <div className="grid grid-cols-3 gap-2 shrink-0">
               <button onClick={() => onNavigate('purchase')} className="bg-da-depotBlue text-white py-2.5 rounded-lg font-bold shadow-sm flex items-center justify-center gap-1.5 active:scale-95 transition">
                 <PackagePlus size={16}/> <span className="text-[11px]">মাল গ্রহণ</span>
               </button>
-              <button onClick={() => alert('কোম্পানিকে পেমেন্ট করার পপআপ')} className="bg-da-green text-white py-2.5 rounded-lg font-bold shadow-sm flex items-center justify-center gap-1.5 active:scale-95 transition">
+              <button onClick={() => showToast('পেমেন্ট মডাল শীঘ্রই আসছে!', 'success')} className="bg-da-green text-white py-2.5 rounded-lg font-bold shadow-sm flex items-center justify-center gap-1.5 active:scale-95 transition">
                 <Wallet size={16}/> <span className="text-[11px]">পেমেন্ট</span>
               </button>
               <button onClick={() => onNavigate('depot')} className="bg-da-depotAmber text-da-depotNavy py-2.5 rounded-lg font-bold shadow-sm flex items-center justify-center gap-1.5 active:scale-95 transition">
@@ -522,11 +590,16 @@ export default function DepotCompanyPage({ onBack, onNavigate }: Props) {
             
             <div className="bg-white p-3 rounded-xl border border-da-cardBorder shadow-sm relative">
               
-              <button onClick={() => openEditSupplier(selectedSupplier)} className="absolute top-3 right-3 flex items-center gap-1 text-da-depotBlue bg-da-depotBlue/10 px-2 py-1 rounded-md text-[10px] font-bold active:scale-95 transition">
-                <Edit3 size={12}/> এডিট
-              </button>
+              <div className="absolute top-3 right-3 flex items-center gap-1.5">
+                <button onClick={() => setDeleteConfirmType('supplier')} className="flex items-center gap-1 text-da-red bg-da-red/10 px-2 py-1 rounded-md text-[10px] font-bold active:scale-95 transition">
+                  <Trash2 size={12}/> ডিলিট
+                </button>
+                <button onClick={() => openEditSupplier(selectedSupplier)} className="flex items-center gap-1 text-da-depotBlue bg-da-depotBlue/10 px-2 py-1 rounded-md text-[10px] font-bold active:scale-95 transition">
+                  <Edit3 size={12}/> এডিট
+                </button>
+              </div>
 
-              <div className="flex items-center gap-2.5 mb-2.5 pr-16">
+              <div className="flex items-center gap-2.5 mb-2.5 pr-24">
                 <div className="w-10 h-10 bg-da-depotBg rounded-full flex items-center justify-center text-da-depotBlue border border-da-cardBorder overflow-hidden shrink-0">
                   {selectedSupplier.image_url ? <img src={selectedSupplier.image_url} alt="" className="w-full h-full object-cover"/> : <Truck size={20}/>}
                 </div>
@@ -564,7 +637,7 @@ export default function DepotCompanyPage({ onBack, onNavigate }: Props) {
               <button onClick={() => onNavigate('purchase')} className="bg-da-depotBlue text-white py-2.5 rounded-lg font-bold shadow-sm flex items-center justify-center gap-1.5 active:scale-95 transition">
                 <PackagePlus size={16}/> <span className="text-[11px]">মাল গ্রহণ</span>
               </button>
-              <button onClick={() => alert('সাপ্লায়ারকে পেমেন্ট করার পপআপ')} className="bg-da-green text-white py-2.5 rounded-lg font-bold shadow-sm flex items-center justify-center gap-1.5 active:scale-95 transition">
+              <button onClick={() => showToast('পেমেন্ট মডাল শীঘ্রই আসছে!', 'success')} className="bg-da-green text-white py-2.5 rounded-lg font-bold shadow-sm flex items-center justify-center gap-1.5 active:scale-95 transition">
                 <Wallet size={16}/> <span className="text-[11px]">পেমেন্ট</span>
               </button>
               <button onClick={() => onNavigate('depot')} className="bg-da-depotAmber text-da-depotNavy py-2.5 rounded-lg font-bold shadow-sm flex items-center justify-center gap-1.5 active:scale-95 transition">
@@ -818,6 +891,41 @@ export default function DepotCompanyPage({ onBack, onNavigate }: Props) {
             </div>
             <div className="p-3 border-t border-da-cardBorder bg-da-depotBg">
               <button onClick={() => setSelectedActivity(null)} className="w-full bg-da-depotNavy text-white py-2 rounded-xl font-bold">বন্ধ করুন</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============ ডিলিট কনফার্মেশন মডাল ============ */}
+      {deleteConfirmType && (
+        <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-xs overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="p-5 text-center">
+              <div className="w-14 h-14 bg-da-red/10 rounded-full flex items-center justify-center mx-auto mb-3">
+                <AlertTriangle size={26} className="text-da-red" />
+              </div>
+              <h3 className="font-bold text-base text-da-textDark mb-1">
+                {deleteConfirmType === 'company' ? 'কোম্পানি ডিলিট করবেন?' : 'সাপ্লায়ার ডিলিট করবেন?'}
+              </h3>
+              <p className="text-xs text-da-textMuted">
+                {deleteConfirmType === 'company'
+                  ? `"${selectedCompany?.name}" ডিলিট হয়ে যাবে। এটি আর ফেরানো যাবে না।`
+                  : `"${selectedSupplier?.name}" ডিলিট হয়ে যাবে। এটি আর ফেরানো যাবে না।`}
+              </p>
+            </div>
+            <div className="p-3 border-t border-da-cardBorder bg-da-depotBg flex gap-2">
+              <button
+                onClick={() => setDeleteConfirmType(null)}
+                disabled={isDeleting}
+                className="flex-1 bg-white border border-da-cardBorder text-da-textMuted py-2 rounded-xl font-bold disabled:opacity-50"
+              >বাতিল</button>
+              <button
+                onClick={deleteConfirmType === 'company' ? handleDeleteCompany : handleDeleteSupplier}
+                disabled={isDeleting}
+                className="flex-1 bg-da-red text-white py-2 rounded-xl font-bold shadow-md flex justify-center items-center gap-1.5 disabled:opacity-60"
+              >
+                {isDeleting ? <Loader2 size={14} className="animate-spin"/> : <Trash2 size={14}/>} ডিলিট
+              </button>
             </div>
           </div>
         </div>

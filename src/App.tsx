@@ -10,8 +10,6 @@ import DepotCompanyPage from './pages/depot/DepotCompanyPage';
 import DepotStockInPage from './pages/depot/DepotStockInPage';
 import DepotExpensePage from './pages/depot/DepotExpensePage';
 import DepotReportsPage from './pages/depot/DepotReportsPage';
-
-// ✅ IMPORTANT: এই লাইনটি ঠিক এভাবেই থাকতে হবে (ভুল করে components থেকে ইম্পোর্ট করবেন না)
 import DepotTransferPage from './pages/depot/DepotTransferPage'; 
 
 import {
@@ -63,7 +61,15 @@ const defaultModeConfig: ModeConfig = {
 function AppContent() {
   const { user, activeBusiness, isLoading, businesses, switchBusiness } = useAuth();
 
-  const [currentScreen, setCurrentScreen] = useState<ScreenKey>('dashboard');
+  const [currentScreen, setCurrentScreen] = useState<ScreenKey>(() => {
+    const saved = localStorage.getItem('currentScreen');
+    return (saved as ScreenKey) || 'dashboard';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('currentScreen', currentScreen);
+  }, [currentScreen]);
+
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
   const [showExitModal, setShowExitModal] = useState<boolean>(false);
   
@@ -77,10 +83,21 @@ function AppContent() {
   }, [currentMode]);
 
   const [modeConfig, setModeConfig] = useState<ModeConfig>(defaultModeConfig);
-  const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
+  
+  const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(() => {
+    return localStorage.getItem('selectedTransactionId') || null;
+  });
 
-  const historyStackRef = useRef<ScreenKey[]>(['dashboard']);
-  const currentScreenRef = useRef<ScreenKey>('dashboard');
+  useEffect(() => {
+    if (selectedTransactionId) {
+      localStorage.setItem('selectedTransactionId', selectedTransactionId);
+    } else {
+      localStorage.removeItem('selectedTransactionId');
+    }
+  }, [selectedTransactionId]);
+
+  const historyStackRef = useRef<ScreenKey[]>([currentScreen]);
+  const currentScreenRef = useRef<ScreenKey>(currentScreen);
   const isExitingRef = useRef<boolean>(false);
   const historyCount = useRef<number>(0);
 
@@ -248,7 +265,6 @@ function AppContent() {
         : <ReportsPage onBack={goBack} onNavigate={navigateTo} />;
     }
 
-    // ✅ এখানে কোনো এরর থাকার সুযোগ নেই, কারণ ইম্পোর্ট একদম ঠিক আছে
     if (currentScreen === 'depot') {
       return <DepotTransferPage onBack={goBack} />;
     }

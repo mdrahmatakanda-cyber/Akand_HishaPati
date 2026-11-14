@@ -3,7 +3,7 @@ import {
   ArrowLeft, Search, Plus, X, Loader2, 
   User, Phone, MapPin, Wallet, 
   ReceiptText, Clock, CheckCircle2, AlertTriangle, ArrowRightLeft,
-  Image as ImageIcon, FileText, Truck, Edit3, Store, Building2
+  Image as ImageIcon, FileText, Truck, Edit3, Store, Building2, Trash2
 } from 'lucide-react';
 import { toBangla } from '../../lib/utils';
 import { useAppContext } from '../../context/AppContext';
@@ -56,6 +56,8 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
 
   const [editDealerData, setEditDealerData] = useState({ name: '', phone: '', area: '', dealer_code: '', previous_due: '' });
   const [paymentAmount, setPaymentAmount] = useState('');
+  const [deleteConfirmType, setDeleteConfirmType] = useState<'dealer' | 'depot' | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   
   const [toast, setToast] = useState<{ show: boolean, message: string, type: 'success' | 'error' }>({ show: false, message: '', type: 'success' });
 
@@ -77,8 +79,8 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
         if (!activeBusiness?.id) return;
         
         const [dealRes, depRes] = await Promise.all([
-          supabase.from('dealers').select('*').eq('business_id', activeBusiness.id).order('created_at', { ascending: false }),
-          supabase.from('depots').select('*').eq('business_id', activeBusiness.id).order('created_at', { ascending: false })
+          supabase.from('dealers').select('*').eq('business_id', activeBusiness.id).is('deleted_at', null).order('created_at', { ascending: false }),
+          supabase.from('depots').select('*').eq('business_id', activeBusiness.id).is('deleted_at', null).order('created_at', { ascending: false })
         ]);
         
         if (dealRes.error) throw dealRes.error;
@@ -191,8 +193,49 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
         fetchData();
         setSelectedDealer({ ...selectedDealer, due_balance: selectedDealer.due_balance - amount });
       }
-      setIsPaymentModalOpen(false); setPaymentAmount(''); showToast('টাকা জমা সফল হয়েছে!');
+      setIsPaymentModalOpen(false); setPaymentAmount(''); showToast('টাকা জমা সফল হয়েছে!');
     } catch (error: any) { showToast(error.message, 'error'); } finally { setIsSaving(false); }
+  };
+
+  const handleDeleteDealer = async () => {
+    if (!selectedDealer) return;
+    setIsDeleting(true);
+    try {
+      if (isDemoMode) {
+        setDealers(prev => prev.filter(d => d.id !== selectedDealer.id));
+      } else {
+        const { error } = await supabase
+          .from('dealers')
+          .update({ deleted_at: new Date().toISOString() })
+          .eq('id', selectedDealer.id);
+        if (error) throw error;
+        fetchData();
+      }
+      setIsProfileModalOpen(false);
+      setSelectedDealer(null);
+      setDeleteConfirmType(null);
+      showToast('ডিলার ডিলিট হয়েছে!');
+    } catch (error: any) { showToast(error.message, 'error'); } finally { setIsDeleting(false); }
+  };
+
+  const handleDeleteDepot = async () => {
+    if (!selectedDepot) return;
+    setIsDeleting(true);
+    try {
+      if (isDemoMode) {
+        setDepots(prev => prev.filter(d => d.id !== selectedDepot.id));
+      } else {
+        const { error } = await supabase
+          .from('depots')
+          .update({ deleted_at: new Date().toISOString() })
+          .eq('id', selectedDepot.id);
+        if (error) throw error;
+        fetchData();
+      }
+      setSelectedDepot(null);
+      setDeleteConfirmType(null);
+      showToast('ডিপো ডিলিট হয়েছে!');
+    } catch (error: any) { showToast(error.message, 'error'); } finally { setIsDeleting(false); }
   };
 
   // --- ডিপো ফাংশন ---
@@ -246,7 +289,7 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
               <ArrowLeft size={20} />
             </button>
             <h1 className="font-bold text-lg">
-              {selectedDealer ? 'ডিলার লেজার' : selectedDepot ? 'ডিপো বিস্তারিত' : 'ডিলার ও ডিপো'}
+              {selectedDealer ? 'ডিলার বিস্তারিত' : selectedDepot ? 'ডিপো বিস্তারিত' : 'ডিলার ও ডিপো'}
             </h1>
           </div>
           {selectedDealer && (
@@ -463,6 +506,9 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
                 <Store size={20}/> <span className="text-xs">স্টক দেখুন</span>
               </button>
             </div>
+            <button onClick={() => setDeleteConfirmType('depot')} className="mt-2 bg-red-50 text-da-red border border-da-red/30 py-2.5 rounded-lg font-bold shadow-sm flex items-center justify-center gap-2 active:scale-95 transition shrink-0">
+              <Trash2 size={16}/> ডিপো ডিলিট করুন
+            </button>
           </>
         )}
 
@@ -652,10 +698,18 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
               )}
             </div>
             <div className="p-3 border-t border-da-cardBorder bg-da-depotBg flex gap-2 shrink-0">
+              <button
+                onClick={() => setDeleteConfirmType('dealer')}
+                disabled={isSaving}
+                className="bg-red-50 text-da-red border border-da-red/30 px-3 py-2.5 rounded-xl font-bold shadow-sm flex items-center gap-1 active:scale-95 transition disabled:opacity-50"
+                title="ডিলার ডিলিট করুন"
+              >
+                <Trash2 size={16} />
+              </button>
               {isEditingProfile ? (
-                <button onClick={handleUpdateDealer} disabled={isSaving} className="w-full bg-da-green text-white py-2.5 rounded-xl font-bold shadow-md flex justify-center items-center gap-2">{isSaving ? <Loader2 size={16} className="animate-spin"/> : <><CheckCircle2 size={16}/> সেভ করুন</>}</button>
+                <button onClick={handleUpdateDealer} disabled={isSaving} className="flex-1 bg-da-green text-white py-2.5 rounded-xl font-bold shadow-md flex justify-center items-center gap-2">{isSaving ? <Loader2 size={16} className="animate-spin"/> : <><CheckCircle2 size={16}/> সেভ করুন</>}</button>
               ) : (
-                <button onClick={() => setIsProfileModalOpen(false)} className="w-full bg-da-depotNavy text-white py-2.5 rounded-xl font-bold shadow-md">বন্ধ করুন</button>
+                <button onClick={() => setIsProfileModalOpen(false)} className="flex-1 bg-da-depotNavy text-white py-2.5 rounded-xl font-bold shadow-md">বন্ধ করুন</button>
               )}
             </div>
           </div>
@@ -686,6 +740,41 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
             <div className="p-3 border-t border-da-cardBorder bg-da-depotBg flex gap-2">
               <button onClick={() => setIsPaymentModalOpen(false)} className="flex-1 bg-white border border-da-cardBorder text-da-textMuted py-2 rounded-xl font-bold">বাতিল</button>
               <button onClick={handlePayment} disabled={isSaving} className="flex-1 bg-da-green text-white py-2 rounded-xl font-bold shadow-md flex justify-center items-center">{isSaving ? <Loader2 size={16} className="animate-spin"/> : 'জমা করুন'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============ ডিলিট কনফার্মেশন মডাল ============ */}
+      {deleteConfirmType && (
+        <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-xs overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="p-5 text-center">
+              <div className="w-14 h-14 bg-da-red/10 rounded-full flex items-center justify-center mx-auto mb-3">
+                <AlertTriangle size={26} className="text-da-red" />
+              </div>
+              <h3 className="font-bold text-base text-da-textDark mb-1">
+                {deleteConfirmType === 'dealer' ? 'ডিলার ডিলিট করবেন?' : 'ডিপো ডিলিট করবেন?'}
+              </h3>
+              <p className="text-xs text-da-textMuted">
+                {deleteConfirmType === 'dealer'
+                  ? `"${selectedDealer?.name}" ডিলিট হয়ে যাবে। এটি আর ফেরানো যাবে না।`
+                  : `"${selectedDepot?.name}" ডিলিট হয়ে যাবে। এটি আর ফেরানো যাবে না।`}
+              </p>
+            </div>
+            <div className="p-3 border-t border-da-cardBorder bg-da-depotBg flex gap-2">
+              <button
+                onClick={() => setDeleteConfirmType(null)}
+                disabled={isDeleting}
+                className="flex-1 bg-white border border-da-cardBorder text-da-textMuted py-2 rounded-xl font-bold disabled:opacity-50"
+              >বাতিল</button>
+              <button
+                onClick={deleteConfirmType === 'dealer' ? handleDeleteDealer : handleDeleteDepot}
+                disabled={isDeleting}
+                className="flex-1 bg-da-red text-white py-2 rounded-xl font-bold shadow-md flex justify-center items-center gap-1.5 disabled:opacity-60"
+              >
+                {isDeleting ? <Loader2 size={14} className="animate-spin"/> : <Trash2 size={14}/>} ডিলিট
+              </button>
             </div>
           </div>
         </div>

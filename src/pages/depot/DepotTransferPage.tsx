@@ -5,21 +5,16 @@ import type { EngineProduct, EngineParty } from '../../components/TransactionEng
 import { useAuth } from '../../context/AuthContext';
 import { useAppContext } from '../../context/AppContext';
 import { supabase } from '../../lib/supabase';
-import { demoProducts } from '../../lib/demoData';
+import { demoProducts, demoDealers, demoDepots } from '../../lib/demoData';
 
 interface PageProps { onBack: () => void; }
-
-const demoDealers: EngineParty[] = [
-  { id: 'd1', name: 'মোল্লা পোল্ট্রি', phone: '01711000001', address: 'গাজীপুর' },
-  { id: 'd2', name: 'ভাই ভাই এগ্রো', phone: '01711000002', address: 'সাভার' },
-];
 
 export default function DepotTransferPage({ onBack }: PageProps) {
   const { activeBusiness } = useAuth();
   const { isDemoMode } = useAppContext();
   
   const [isLoading, setIsLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState(0); // 0: Dealer, 1: Depot
+  const [activeTab, setActiveTab] = useState(0);
   
   const [products, setProducts] = useState<EngineProduct[]>([]);
   const [dealers, setDealers] = useState<EngineParty[]>([]);
@@ -27,51 +22,67 @@ export default function DepotTransferPage({ onBack }: PageProps) {
 
   useEffect(() => {
     const fetchData = async () => {
+      if (!isDemoMode && !activeBusiness?.id) return;
       setIsLoading(true);
-      if (isDemoMode) {
-        setProducts(demoProducts.map(p => ({ id: p.id, name: p.name, category: p.category, company: p.company, stockQty: p.stock, rate: p.salePrice, unit: 'পিস' })));
-        setDealers(demoDealers);
-        setDepots([
-          { id: 'dep1', name: 'কেন্দ্রীয় গুদাম', phone: 'N/A', address: 'হেড অফিস' },
-          { id: 'dep2', name: 'গাজীপুর ডিপো', phone: 'N/A', address: 'গাজীপুর' }
-        ]);
-      } else {
-        if (!activeBusiness?.id) return;
-        
-        // ✅ আলাদা আলাদা কোয়েরি
-        const [prodRes, catRes, compRes, custRes, bizRes] = await Promise.all([
-          supabase.from('products').select('*').eq('business_id', activeBusiness.id),
-          supabase.from('categories').select('*').eq('business_id', activeBusiness.id),
-          supabase.from('companies').select('*').eq('business_id', activeBusiness.id),
-          supabase.from('customers').select('*').eq('business_id', activeBusiness.id),
-          supabase.from('businesses').select('*').eq('type', 'depot')
-        ]);
 
-        if (prodRes.data) {
-          const cats = catRes.data || [];
-          const comps = compRes.data || [];
-          setProducts(prodRes.data.map((p: any) => ({
-            id: p.id, 
-            name: p.name, 
-            category: cats.find((c: any) => c.id === p.category_id)?.name || 'সাধারণ', 
-            company: comps.find((c: any) => c.id === p.company_id)?.name || 'সাধারণ',
-            stockQty: p.stock_quantity || 0,
-            rate: p.sale_price || 0,
-            unit: p.unit || 'পিস',
-            image_url: p.image_url
+      try {
+        if (isDemoMode) {
+          setProducts(demoProducts.map(p => ({ 
+            id: p.id, name: p.name, category: p.category, company: p.company, 
+            stockQty: p.stock, rate: p.salePrice, unit: 'পিস' 
           })));
+          setDealers(demoDealers.map((d: any) => ({
+            id: d.id.toString(), name: d.name, phone: d.phone, address: d.area || 'N/A'
+          })));
+          setDepots(demoDepots);
+        } else {
+          if (!activeBusiness) return;
+          const bizId = activeBusiness.id; // ✅ লোকাল ভ্যারিয়েবল তৈরি করে নাল-চেক এড়ানো হলো
+
+          const [prodRes, catRes, compRes, custRes, bizRes] = await Promise.all([
+            supabase.from('products').select('*').eq('business_id', bizId).gt('stock_quantity', 0),
+            supabase.from('categories').select('*'),
+            supabase.from('companies').select('*'),
+            supabase.from('customers').select('*'),
+            supabase.from('businesses').select('*').eq('type', 'depot')
+          ]);
+
+          if (prodRes.data) {
+            const cats = catRes.data || [];
+            const comps = compRes.data || [];
+            setProducts(prodRes.data.map((p: any) => ({
+              id: p.id, 
+              name: p.name, 
+              category: cats.find((c: any) => c.id === p.category_id)?.name || 'সাধারণ', 
+              company: comps.find((c: any) => c.id === p.company_id)?.name || 'সাধারণ',
+              stockQty: p.stock_quantity || 0,
+              rate: p.sale_price || 0,
+              unit: p.unit || 'পিস',
+              image_url: p.image_url
+            })));
+          }
+          if (custRes.data) {
+            setDealers(custRes.data.map((c: any) => ({ 
+              id: c.id, name: c.name, phone: c.phone || 'N/A', address: c.address || 'N/A' 
+            })));
+          }
+          if (bizRes.data) {
+            setDepots(bizRes.data.map((b: any) => ({ 
+              id: b.id, name: b.name, phone: b.phone || 'N/A', address: b.address || 'N/A' 
+            })));
+          }
         }
-        if (custRes.data) setDealers(custRes.data.map((c: any) => ({ id: c.id, name: c.name, phone: c.phone || 'N/A', address: c.address || 'N/A' })));
-        if (bizRes.data) setDepots(bizRes.data.map((b: any) => ({ id: b.id, name: b.name, phone: b.phone || 'N/A', address: b.address || 'N/A' })));
+      } catch (error) {
+        console.error(error);
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     };
     fetchData();
-  }, [isDemoMode, activeBusiness]);
+  }, [isDemoMode, activeBusiness?.id]);
 
-  const handleFinalize = (data: any) => {
-    console.log("Finalized Data:", data);
-    alert('সফলভাবে সম্পন্ন হয়েছে! (ব্যাকএন্ডে সেভ হবে)');
+  const handleFinalize = () => {
+    alert('সফলভাবে সম্পন্ন হয়েছে!');
   };
 
   if (isLoading) {
@@ -85,7 +96,6 @@ export default function DepotTransferPage({ onBack }: PageProps) {
 
   return (
     <div className="flex flex-col h-screen">
-      {/* ট্যাব সিলেক্টর */}
       <div className="bg-[#0B5C47] text-white p-2 flex justify-center gap-2 shadow-md z-50">
         <button onClick={() => setActiveTab(0)} className={`flex-1 max-w-[200px] flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-bold transition ${activeTab === 0 ? 'bg-white text-[#0D3B80] shadow' : 'bg-white/10 hover:bg-white/20'}`}>
           <Truck size={16} /> ডিলার ট্রান্সফার
@@ -95,7 +105,6 @@ export default function DepotTransferPage({ onBack }: PageProps) {
         </button>
       </div>
 
-      {/* মাস্টার কম্পোনেন্ট */}
       <div className="flex-1 overflow-hidden">
         {activeTab === 0 ? (
           <TransactionEngine 

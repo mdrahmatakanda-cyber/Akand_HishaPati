@@ -27,24 +27,19 @@ export interface ReceiptData {
   shopLogoUrl?: string;
   shopDescription?: string;
   tableNote?: string;
-  
   customerName: string;
   proprietor: string;
   customerPhone: string;
   customerAddress: string;
   marketName: string;
-  
-  // অফিসারের তথ্য
-  officerName: string;
+  officerName: string; // ✅ srName বাদ দিয়ে officerName
   officerPhone: string;
   officerEmail: string;
   receiptTime: string;
-
   vehicleNo: string;
   driverName: string;
   driverPhone: string;
   transportRent: number;
-
   items: ReceiptItem[];
   totalBags: number;
   totalPieces: number;
@@ -57,6 +52,7 @@ export interface ReceiptData {
   note?: string;
   footerText1?: string;
   footerText2?: string;
+  type?: 'sale' | 'purchase' | 'transfer' | 'expense'; // ✅ নতুন ফিল্ড
 }
 
 interface ReceiptModalProps {
@@ -99,6 +95,8 @@ const ReceiptPaper: React.FC<{ data: ReceiptData; style?: React.CSSProperties; r
     </div>
   );
 
+  const isExpense = data.type === 'expense';
+
   return (
     <div ref={ref} className={`rm-paper bg-white ${INK} relative`} style={{ width: PAGE_W, minHeight: PAGE_H, boxSizing: 'border-box', padding: 14, fontSize: 12.5, lineHeight: 1.4, ...style }}>
       <div className="min-h-full flex flex-col" style={{ border: `1.5px solid ${GOLD}`, outline: '1px solid #E6DBBE', outlineOffset: 3, padding: '20px 24px 16px', boxSizing: 'border-box' }}>
@@ -115,9 +113,12 @@ const ReceiptPaper: React.FC<{ data: ReceiptData; style?: React.CSSProperties; r
             </div>
           </div>
           <div className="rounded-md overflow-hidden border border-[#E6DBBE] bg-white">
-            <div className="flex justify-between items-baseline px-3 py-1.5 bg-[#FBF5E6] border-b border-[#E6DBBE]"><span className={`font-bold text-[13px] ${INK}`}>বিক্রয় চালান</span><span className="font-semibold text-[10.5px] text-[#7A5E1E]">SALES INVOICE</span></div>
+            <div className="flex justify-between items-baseline px-3 py-1.5 bg-[#FBF5E6] border-b border-[#E6DBBE]">
+              <span className={`font-bold text-[13px] ${INK}`}>{isExpense ? 'খরচের রিসিপ্ট' : 'বিক্রয় চালান'}</span>
+              <span className="font-semibold text-[10.5px] text-[#7A5E1E]">{isExpense ? 'EXPENSE RECEIPT' : 'SALES INVOICE'}</span>
+            </div>
             <div className="px-3 py-1.5 text-[12px] space-y-0.5">
-              <div className="flex justify-between"><span className={MUTED}>চালান নং:</span><span className="font-bold text-[#2B5C8A]">#{data.invoiceNo}</span></div>
+              <div className="flex justify-between"><span className={MUTED}>রিসিপ্ট নং:</span><span className="font-bold text-[#2B5C8A]">#{data.invoiceNo}</span></div>
               <div className="flex justify-between"><span className={MUTED}>তারিখ:</span><span className="font-semibold">{data.date}</span></div>
               <div className="flex justify-between items-center"><span className={MUTED}>স্ট্যাটাস:</span><span className="px-2 rounded-full border border-[#E3C772] bg-[#FDF3D4] text-[#6B4E0F] text-[11px] font-bold">{data.status}</span></div>
             </div>
@@ -126,31 +127,42 @@ const ReceiptPaper: React.FC<{ data: ReceiptData; style?: React.CSSProperties; r
 
         <div className="my-3" style={{ borderTop: `1px solid ${GOLD}`, borderBottom: `1px solid ${GOLD}`, height: 4 }} />
 
-        <div className="grid grid-cols-3 gap-2 text-[11px] leading-tight">
-          <div className="rounded-md border border-[#DDE3EC] bg-[#F7F9FC] px-2 py-1.5">
-            <SectionTitle>ক্রেতা / দোকান</SectionTitle>
-            <p className="font-bold text-[12px] leading-tight mb-0.5">{data.customerName}</p>
-            <p><span className={MUTED}>প্রোপ্রাইটর: </span>{data.proprietor}</p>
-            <p><span className={MUTED}>ফোন: </span>{data.customerPhone}</p>
-            <p className="truncate"><span className={MUTED}>ঠিকানা: </span>{data.customerAddress}</p>
-            <p className="truncate"><span className={MUTED}>বাজার: </span>{data.marketName}</p>
-          </div>
+        <div className={`grid ${isExpense ? 'grid-cols-2' : 'grid-cols-3'} gap-2 text-[11px] leading-tight`}>
+          {isExpense ? (
+            <div className="rounded-md border border-[#DDE3EC] bg-[#F7F9FC] px-2 py-1.5">
+              <SectionTitle>খরচের তথ্য</SectionTitle>
+              <p className="font-bold text-[12px] leading-tight mb-0.5">{data.customerName}</p>
+              <p><span className={MUTED}>খরচের ধরন: </span>{data.items[0]?.name || 'সাধারণ'}</p>
+              <p className="truncate"><span className={MUTED}>নোট: </span>{data.note || 'N/A'}</p>
+            </div>
+          ) : (
+            <div className="rounded-md border border-[#DDE3EC] bg-[#F7F9FC] px-2 py-1.5">
+              <SectionTitle>ক্রেতা / দোকান</SectionTitle>
+              <p className="font-bold text-[12px] leading-tight mb-0.5">{data.customerName}</p>
+              <p><span className={MUTED}>প্রোপ্রাইটর: </span>{data.proprietor}</p>
+              <p><span className={MUTED}>ফোন: </span>{data.customerPhone}</p>
+              <p className="truncate"><span className={MUTED}>ঠিকানা: </span>{data.customerAddress}</p>
+              <p className="truncate"><span className={MUTED}>বাজার: </span>{data.marketName}</p>
+            </div>
+          )}
           
           <div className="rounded-md border border-[#DDE3EC] bg-[#F7F9FC] px-2 py-1.5">
-            <SectionTitle>অফিসার ও ডেলিভারি</SectionTitle>
+            <SectionTitle>{isExpense ? 'অফিসার তথ্য' : 'অফিসার ও ডেলিভারি'}</SectionTitle>
             <p className="font-bold text-[12px] leading-tight mb-0.5">{data.officerName}</p>
             <p><span className={MUTED}>ফোন: </span>{data.officerPhone}</p>
             <p className="break-all"><span className={MUTED}>ইমেইল: </span>{data.officerEmail}</p>
-            <p className="mt-0.5"><span className={MUTED}>সময়:</span> <span className="font-semibold">{data.receiptTime}</span></p>
+            <p className="mt-0.5"><span className={MUTED}>সময়:</span> <span className="font-semibold">{data.receiptTime}</span></p>
           </div>
 
-          <div className="rounded-md border border-[#EADFC0] bg-[#FDFAF0] px-2 py-1.5">
-            <SectionTitle>পরিবহন ও গাড়ির তথ্য</SectionTitle>
-            <p><span className={MUTED}>গাড়ি নাম্বার: </span><span className="font-semibold">{data.vehicleNo || 'N/A'}</span></p>
-            <p><span className={MUTED}>ড্রাইভার: </span>{data.driverName || 'N/A'}</p>
-            <p><span className={MUTED}>ড্রাইভার ফোন: </span>{data.driverPhone || 'N/A'}</p>
-            <p className="mt-0.5"><span className={MUTED}>গাড়ি ভাড়া: </span><span className="font-bold text-[#2B5C8A]">{formatTaka(data.transportRent)}</span></p>
-          </div>
+          {!isExpense && (
+            <div className="rounded-md border border-[#EADFC0] bg-[#FDFAF0] px-2 py-1.5">
+              <SectionTitle>পরিবহন ও গাড়ির তথ্য</SectionTitle>
+              <p><span className={MUTED}>গাড়ি নাম্বার: </span><span className="font-semibold">{data.vehicleNo || 'N/A'}</span></p>
+              <p><span className={MUTED}>ড্রাইভার: </span>{data.driverName || 'N/A'}</p>
+              <p><span className={MUTED}>ড্রাইভার ফোন: </span>{data.driverPhone || 'N/A'}</p>
+              <p className="mt-0.5"><span className={MUTED}>গাড়ি ভাড়া: </span><span className="font-bold text-[#2B5C8A]">{formatTaka(data.transportRent)}</span></p>
+            </div>
+          )}
         </div>
 
         <div className="flex-1 min-h-0 mt-3 relative">
@@ -159,8 +171,8 @@ const ReceiptPaper: React.FC<{ data: ReceiptData; style?: React.CSSProperties; r
             <thead>
               <tr className="bg-[#EAF0F8]" style={{ borderBottom: `2px solid ${GOLD}` }}>
                 <th className="py-1.5 px-2 text-center font-bold border-r border-[#D5DCE8]">#</th>
-                <th className="py-1.5 px-3 text-left font-bold border-r border-[#D5DCE8]">পণ্যের বিবরণ</th>
-                <th className="py-1.5 px-2 text-center font-bold border-r border-[#D5DCE8]">মোট পরিমাণ</th>
+                <th className="py-1.5 px-3 text-left font-bold border-r border-[#D5DCE8]">বিবরণ</th>
+                <th className="py-1.5 px-2 text-center font-bold border-r border-[#D5DCE8]">পরিমাণ</th>
                 <th className="py-1.5 px-2 text-right font-bold border-r border-[#D5DCE8]">দর (৳)</th>
                 <th className="py-1.5 px-3 text-right font-bold">মোট টাকা (৳)</th>
               </tr>
@@ -187,9 +199,9 @@ const ReceiptPaper: React.FC<{ data: ReceiptData; style?: React.CSSProperties; r
             </tbody>
             <tfoot>
               <tr className="bg-[#F3F6FB] font-bold" style={{ borderTop: `1.5px solid ${GOLD}` }}>
-                <td colSpan={2} className="py-2 px-3 text-right border-r border-[#D5DCE8]">সর্বমোট পণ্যের পরিমাণ:</td>
-                <td className="py-2 px-2 text-center border-r border-[#D5DCE8] text-[#2B5C8A]">{data.totalBags} বস্তা</td>
-                <td className="py-2 px-2 text-center border-r border-[#D5DCE8]">{data.totalPieces} পিস</td>
+                <td colSpan={2} className="py-2 px-3 text-right border-r border-[#D5DCE8]">{isExpense ? 'মোট:' : 'সর্বমোট পণ্যের পরিমাণ:'}</td>
+                <td className="py-2 px-2 text-center border-r border-[#D5DCE8] text-[#2B5C8A]">{isExpense ? '-' : `${data.totalBags} বস্তা`}</td>
+                <td className="py-2 px-2 text-center border-r border-[#D5DCE8]">{isExpense ? '-' : `${data.totalPieces} পিস`}</td>
                 <td className="py-2 px-3 text-right">{formatTaka(data.subtotal)}</td>
               </tr>
             </tfoot>
@@ -202,39 +214,69 @@ const ReceiptPaper: React.FC<{ data: ReceiptData; style?: React.CSSProperties; r
         <div className="grid grid-cols-[1.35fr,1fr] gap-3 mt-3 items-start text-[12.5px]">
           <div className="space-y-2">
             <div className="rounded-md border border-[#DDE3EC] bg-[#F7F9FC] px-3 py-2">
-              <span className={MUTED}>মোট জমার পরিমাণ কথায়: </span><span className="font-bold">{data.paidInWords || 'শূন্য টাকা মাত্র'}</span>
+              <span className={MUTED}>{isExpense ? 'মোট খরচ কথায়: ' : 'মোট জমার পরিমাণ কথায়: '}</span><span className="font-bold">{data.paidInWords || 'শূন্য টাকা মাত্র'}</span>
             </div>
-            <div className="rounded-md border border-[#DDE3EC] bg-white px-3 py-1.5 flex items-center justify-between text-[12px]">
-              <span><span className={MUTED}>মোট বস্তা: </span><b>{data.totalBags}</b></span><span className="w-px h-4 bg-[#CBD3DF]" />
-              <span><span className={MUTED}>মোট পিস: </span><b>{data.totalPieces} পিস</b></span><span className="w-px h-4 bg-[#CBD3DF]" />
-              <span><span className={MUTED}>গাড়ি ভাড়া: </span><b className="text-[#2B5C8A]">{formatTaka(data.transportRent)}</b></span>
-            </div>
-            <div className="rounded-md bg-[#FDFAF0] px-3 py-1.5 text-[12px]" style={{ border: '1px solid #EADFC0', borderLeft: `4px solid ${GOLD}` }}>
-              <p className="font-bold">নোট:</p><p>{data.note}</p>
-            </div>
+            
+            {!isExpense && (
+              <>
+                <div className="rounded-md border border-[#DDE3EC] bg-white px-3 py-1.5 flex items-center justify-between text-[12px]">
+                  <span><span className={MUTED}>মোট বস্তা: </span><b>{data.totalBags}</b></span><span className="w-px h-4 bg-[#CBD3DF]" />
+                  <span><span className={MUTED}>মোট পিস: </span><b>{data.totalPieces} পিস</b></span><span className="w-px h-4 bg-[#CBD3DF]" />
+                  <span><span className={MUTED}>গাড়ি ভাড়া: </span><b className="text-[#2B5C8A]">{formatTaka(data.transportRent)}</b></span>
+                </div>
+              </>
+            )}
+            
+            {data.note && (
+              <div className="rounded-md bg-[#FDFAF0] px-3 py-1.5 text-[12px]" style={{ border: '1px solid #EADFC0', borderLeft: `4px solid ${GOLD}` }}>
+                <p className="font-bold">নোট:</p><p>{data.note}</p>
+              </div>
+            )}
           </div>
+          
           <div className="rounded-md border border-[#CBD3DF] overflow-hidden bg-white">
-            <div className="px-3 py-2 space-y-1 text-[12.5px]">
-              <div className="flex justify-between"><span className={MUTED}>মোট বিল:</span><span className="font-bold">{formatTaka(data.subtotal)}</span></div>
-              <div className="flex justify-between"><span className={MUTED}>গাড়ি ভাড়া (আলাদা):</span><span className="font-bold text-[#2B5C8A]">{formatTaka(data.transportRent)}</span></div>
-              <div className="flex justify-between"><span className={MUTED}>মোট জমা:</span><span className="font-bold text-[#2B5C8A]">- {formatTaka(data.paidAmount)}</span></div>
-            </div>
-            <div className="px-3 py-2.5 flex justify-between items-center bg-[#FBF1D6]" style={{ borderTop: `1.5px solid ${GOLD}` }}>
-              <span className="font-bold text-[13px]">সর্বমোট বাকি:</span><span className="font-bold text-[17px]">{formatTaka(data.dueAmount)}</span>
-            </div>
+            {isExpense ? (
+              <div className="px-3 py-3 flex justify-between items-center bg-[#FBF1D6]" style={{ borderTop: `1.5px solid ${GOLD}` }}>
+                <span className="font-bold text-[13px]">মোট খরচ:</span><span className="font-bold text-[17px]">{formatTaka(data.grandTotal)}</span>
+              </div>
+            ) : (
+              <>
+                <div className="px-3 py-2 space-y-1 text-[12.5px]">
+                  <div className="flex justify-between"><span className={MUTED}>মোট বিল:</span><span className="font-bold">{formatTaka(data.subtotal)}</span></div>
+                  <div className="flex justify-between"><span className={MUTED}>গাড়ি ভাড়া (আলাদা):</span><span className="font-bold text-[#2B5C8A]">{formatTaka(data.transportRent)}</span></div>
+                  <div className="flex justify-between"><span className={MUTED}>মোট জমা:</span><span className="font-bold text-[#2B5C8A]">- {formatTaka(data.paidAmount)}</span></div>
+                </div>
+                <div className="px-3 py-2.5 flex justify-between items-center bg-[#FBF1D6]" style={{ borderTop: `1.5px solid ${GOLD}` }}>
+                  <span className="font-bold text-[13px]">সর্বমোট বাকি:</span><span className="font-bold text-[17px]">{formatTaka(data.dueAmount)}</span>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-6 text-center text-[12px] mt-3" style={{ paddingTop: 58 }}>
-          <div className="pt-1.5" style={{ borderTop: '1.5px solid #8793A6' }}>
-            <p className="font-bold">ক্রেতার স্বাক্ষর</p><p className={`text-[11px] ${MUTED}`}>{data.customerName}</p>
-          </div>
-          <div className="pt-1.5" style={{ borderTop: '1.5px solid #8793A6' }}>
-            <p className="font-bold">ডেলিভারি ম্যানের স্বাক্ষর</p><p className={`text-[11px] ${MUTED}`}>{data.driverName && data.driverName !== 'N/A' ? data.driverName : '\u00A0'}{data.vehicleNo && data.vehicleNo !== 'N/A' ? ` (${data.vehicleNo})` : ''}</p>
-          </div>
-          <div className="pt-1.5" style={{ borderTop: `1.5px solid ${GOLD}` }}>
-            <p className="font-bold">ডিলারের স্বাক্ষর ও সিল</p><p className="text-[11px] text-[#7A5E1E]">{data.shopName}</p>
-          </div>
+        <div className={`grid ${isExpense ? 'grid-cols-2' : 'grid-cols-3'} gap-6 text-center text-[12px] mt-3`} style={{ paddingTop: 58 }}>
+          {!isExpense ? (
+            <>
+              <div className="pt-1.5" style={{ borderTop: '1.5px solid #8793A6' }}>
+                <p className="font-bold">ক্রেতার স্বাক্ষর</p><p className={`text-[11px] ${MUTED}`}>{data.customerName}</p>
+              </div>
+              <div className="pt-1.5" style={{ borderTop: '1.5px solid #8793A6' }}>
+                <p className="font-bold">ডেলিভারি ম্যানের স্বাক্ষর</p><p className={`text-[11px] ${MUTED}`}>{data.driverName && data.driverName !== 'N/A' ? data.driverName : '\u00A0'}{data.vehicleNo && data.vehicleNo !== 'N/A' ? ` (${data.vehicleNo})` : ''}</p>
+              </div>
+              <div className="pt-1.5" style={{ borderTop: `1.5px solid ${GOLD}` }}>
+                <p className="font-bold">ডিলারের স্বাক্ষর ও সিল</p><p className="text-[11px] text-[#7A5E1E]">{data.shopName}</p>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="pt-1.5" style={{ borderTop: '1.5px solid #8793A6' }}>
+                <p className="font-bold">খরচ গ্রহণকারী</p><p className={`text-[11px] ${MUTED}`}>{data.customerName}</p>
+              </div>
+              <div className="pt-1.5" style={{ borderTop: `1.5px solid ${GOLD}` }}>
+                <p className="font-bold">অনুমোদনকারী</p><p className="text-[11px] text-[#7A5E1E]">{data.shopName}</p>
+              </div>
+            </>
+          )}
         </div>
 
         <div className="flex justify-between items-center mt-3 pt-2 text-[11px]" style={{ borderTop: '1px solid #E6DBBE' }}>
@@ -262,6 +304,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, onClose, onF
   }, [isOpen]);
 
   if (!isOpen || !data) return null;
+
+  const isExpense = data.type === 'expense';
 
   const handlePrint = async () => {
     try { await document.fonts?.ready; } catch {}
@@ -340,7 +384,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, onClose, onF
           <div className="flex items-center justify-between px-4 py-2.5 bg-[#FBF5E6] border-b border-[#E6DBBE] shrink-0">
             <div className="flex items-center gap-2 text-slate-800">
               <FileText className="w-4 h-4 text-[#B98F33]" />
-              <span className="font-semibold text-sm">বিক্রয় চালান প্রিভিউ (A4)</span>
+              <span className="font-semibold text-sm">{isExpense ? 'খরচের রিসিপ্ট প্রিভিউ (A4)' : 'বিক্রয় চালান প্রিভিউ (A4)'}</span>
             </div>
             <button onClick={onClose} className="p-1.5 rounded-full text-slate-700 hover:bg-[#F3E8C8] transition-colors"><X className="w-5 h-5" /></button>
           </div>
@@ -364,11 +408,14 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, onClose, onF
               </button>
             </div>
             <div className="flex gap-2 mt-1">
-              <button onClick={onCancel} className="flex-1 bg-red-50 hover:bg-red-100 text-red-600 font-bold py-2.5 rounded-lg transition-colors text-sm border border-red-200">
-                বাতিল করুন
-              </button>
-              <button onClick={onFinalize} disabled={isSaving} className="flex-[2] bg-[#0A2540] hover:bg-[#1565C0] text-white font-bold py-2.5 rounded-lg flex items-center justify-center gap-2 transition-all shadow-sm active:scale-[0.98] text-sm">
-                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} বিক্রি চূড়ান্ত করুন
+              {!isExpense && (
+                <button onClick={onCancel} className="flex-1 bg-red-50 hover:bg-red-100 text-red-600 font-bold py-2.5 rounded-lg transition-colors text-sm border border-red-200">
+                  বাতিল করুন
+                </button>
+              )}
+              <button onClick={onFinalize} disabled={isSaving} className={`${isExpense ? 'w-full' : 'flex-[2]'} bg-[#0A2540] hover:bg-[#1565C0] text-white font-bold py-2.5 rounded-lg flex items-center justify-center gap-2 transition-all shadow-sm active:scale-[0.98] text-sm`}>
+                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />} 
+                {isExpense ? 'ঠিক আছে' : 'বিক্রি চূড়ান্ত করুন'}
               </button>
             </div>
           </div>

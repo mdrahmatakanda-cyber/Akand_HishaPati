@@ -10,6 +10,7 @@ import { useAuth } from '../context/AuthContext';
 import { useAppContext } from '../context/AppContext';
 import { demoProducts, demoCategories, demoCompanies } from '../lib/demoData';
 import PremiumToast from '../components/PremiumToast';
+import { uploadImageToSupabase } from '../lib/upload'; // ✅ নতুন আপলোড ফাংশন
 
 interface Props {
   onBack: () => void;
@@ -282,13 +283,9 @@ export default function ProductListPage({ onBack }: Props) {
     try {
       let uploadedImageUrl = formData.image_url;
 
+      // ✅ নতুন আপলোড লজিক (অটো WebP কনভার্শন)
       if (productImage && !isDemoMode && activeBusiness?.id) {
-        const fileExt = productImage.name.split('.').pop();
-        const fileName = `prod-${activeBusiness.id}-${Date.now()}.${fileExt}`;
-        const { error: uploadError } = await supabase.storage.from('avatars').upload(fileName, productImage);
-        if (uploadError) throw uploadError;
-        const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(fileName);
-        uploadedImageUrl = urlData.publicUrl;
+        uploadedImageUrl = await uploadImageToSupabase(productImage, 'products');
       }
 
       const productData = {

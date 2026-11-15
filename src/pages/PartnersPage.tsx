@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   ArrowLeft, HelpCircle, Plus, Search, UserPlus, 
   X, TrendingUp, TrendingDown, Percent, FileText, 
-  Image as ImageIcon, Edit3, Loader2, Trash2, AlertTriangle
+  Image as ImageIcon, Edit3, Loader2, Trash2, AlertTriangle, ExternalLink
 } from 'lucide-react';
 import { toBangla } from '../lib/utils';
 import { useAppContext } from '../context/AppContext';
@@ -10,11 +10,12 @@ import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { demoPartners, demoPartnerTransactions, demoBusinessProfit } from '../lib/demoData';
 import PremiumToast from '../components/PremiumToast';
+import { uploadImageToSupabase, uploadPdfToUpstash, getUpstashFileUrl } from '../lib/upload';
 
 interface Props { onBack: () => void; }
 interface Transaction { id: string; amount: number; date: string; note: string; }
 interface Partner {
-  id: string; name: string; phone: string; address: string;
+  id: string; name: string; phone: string; phone_2?: string; address: string;
   share_percentage: number; initial_capital: number;
   image_url?: string; document_url?: string; transactions?: Transaction[];
 }
@@ -28,6 +29,7 @@ export default function PartnersPage({ onBack }: Props) {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [totalBusinessProfit, setTotalBusinessProfit] = useState(0);
+  const [loadingDocKey, setLoadingDocKey] = useState<string | null>(null);
 
   // মডাল স্টেট
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -41,7 +43,7 @@ export default function PartnersPage({ onBack }: Props) {
   const [txType, setTxType] = useState<'investment' | 'withdrawal'>('investment');
 
   // ফর্ম স্টেট
-  const [partnerForm, setPartnerForm] = useState({ name: '', phone: '', address: '', share: '', initialInvestment: '' });
+  const [partnerForm, setPartnerForm] = useState({ name: '', phone: '', phone_2: '', address: '', share: '', initialInvestment: '' });
   const [txForm, setTxForm] = useState({ amount: '', note: '' });
   const [partnerImage, setPartnerImage] = useState<File | null>(null);
   const [partnerDoc, setPartnerDoc] = useState<File | null>(null);
@@ -58,6 +60,7 @@ export default function PartnersPage({ onBack }: Props) {
       if (isDemoMode) {
         const mappedPartners = demoPartners.map((p: any) => ({
           ...p,
+          phone_2: '',
           transactions: demoPartnerTransactions.filter((t: any) => t.partner_id === p.id).map((t: any) => ({
             id: t.id, amount: t.amount, date: t.transaction_date, note: t.note
           }))
@@ -67,14 +70,12 @@ export default function PartnersPage({ onBack }: Props) {
       } else {
         if (!user || !activeBusiness?.id) return;
 
-        // ১. ইউজারের সব বিজনেস আইডি বের করা (দোকান ও ডিপোর হিসাব এক করার জন্য)
         const { data: bizData } = await supabase.from('businesses').select('id').eq('owner_id', user.id);
         const bizIds = bizData && bizData.length > 0 ? bizData.map(b => b.id) : [activeBusiness.id];
 
-        // ২. সব পার্টনার ও তাদের লেনদেন লোড করা (শুধু যেগুলো ডিলিট হয়নি)
         const [partnerRes, txRes] = await Promise.all([
           supabase.from('partners').select('*').in('business_id', bizIds).is('deleted_at', null),
-          supabase.from('partner_transactions').select('*').is('deleted_at', null) // লেনদেনগুলোও ফিল্টার করা হলো
+          supabase.from('partner_transactions').select('*').is('deleted_at', null)
         ]);
         
         if (partnerRes.error) throw partnerRes.error;
@@ -85,7 +86,6 @@ export default function PartnersPage({ onBack }: Props) {
         }));
         setPartners(merged);
 
-        // ৩. সব ব্যবসার মোট লাভের হিসাব (গ্লোবাল)
         const [sales, purchases, expenses] = await Promise.all([
           supabase.from('sales').select('total_amount').in('business_id', bizIds),
           supabase.from('purchases').select('total_amount').in('business_id', bizIds),
@@ -113,12 +113,30 @@ export default function PartnersPage({ onBack }: Props) {
     return Number(partner.initial_capital) + profitShare + inv - wd;
   };
 
+  const handleViewDocument = async (fileKey: string) => {
+    try {
+      if (fileKey.startsWith('http')) {
+        window.open(fileKey, '_blank');
+      } else {
+        setLoadingDocKey(fileKey);
+        const url = await getUpstashFileUrl(fileKey);
+        window.open(url, '_blank');
+        setLoadingDocKey(null);
+      }
+    } catch (error: any) {
+      showToast('ফাইল দেখতে সমস্যা হয়েছে: ' + error.message, 'error');
+      setLoadingDocKey(null);
+    }
+  };
+
   const openEditPartner = (partner: Partner) => {
     setPartnerForm({
-      name: partner.name, phone: partner.phone || '', address: partner.address || '',
+      name: partner.name, phone: partner.phone || '', phone_2: (partner as any).phone_2 || '', address: partner.address || '',
       share: partner.share_percentage?.toString() || '0', initialInvestment: partner.initial_capital?.toString() || '0'
     });
     setIsEditing(true);
+    setPartnerImage(null);
+    setPartnerDoc(null);
     setIsAddModalOpen(true);
   };
 
@@ -126,46 +144,69 @@ export default function PartnersPage({ onBack }: Props) {
     if (!partnerForm.name) return showToast('পার্টনারের নাম আবশ্যক', 'error');
     setIsSaving(true);
     try {
-      const partnerData: Record<string, any> = {
-        name: partnerForm.name, phone: partnerForm.phone, address: partnerForm.address,
-        share_percentage: Number(partnerForm.share) || 0, initial_capital: Number(partnerForm.initialInvestment) || 0,
-        ...(activeBusiness?.id && !isEditing && { business_id: activeBusiness.id })
-      };
+      let uploadedImageUrl = selectedPartner?.image_url || '';
+      let uploadedDocKey = (selectedPartner as any)?.document_url || '';
 
-      if (isDemoMode) {
-        if (isEditing && selectedPartner) {
-          setPartners(partners.map(p => p.id === selectedPartner.id ? { ...p, ...partnerData, image_url: partnerImage ? URL.createObjectURL(partnerImage) : p.image_url } : p));
-        } else {
-          const newPartner: Partner = {
-            id: Date.now().toString(),
-            name: partnerForm.name,
-            phone: partnerForm.phone,
-            address: partnerForm.address,
-            share_percentage: Number(partnerForm.share) || 0,
-            initial_capital: Number(partnerForm.initialInvestment) || 0,
-            image_url: partnerImage ? URL.createObjectURL(partnerImage) : '',
-            transactions: []
-          };
-          setPartners([newPartner, ...partners]);
-        }
-      } else {
-        if (partnerImage) {
-          const fileName = `partner-${Date.now()}.${partnerImage.name.split('.').pop()}`;
-          const { error: upErr } = await supabase.storage.from('avatars').upload(fileName, partnerImage);
-          if (!upErr) {
-            const { data } = supabase.storage.from('avatars').getPublicUrl(fileName);
-            partnerData['image_url'] = data.publicUrl;
+      if (!isDemoMode && activeBusiness?.id) {
+        // ✅ ছবি হলে Supabase-এ WebP হয়ে যাবে
+        if (partnerImage) uploadedImageUrl = await uploadImageToSupabase(partnerImage, 'partners');
+        
+        // ✅ ডকুমেন্ট PDF হলে Upstash-এ যাবে
+        if (partnerDoc) {
+          if (partnerDoc.type === 'application/pdf') {
+            const { fileKey } = await uploadPdfToUpstash(partnerDoc);
+            uploadedDocKey = fileKey;
+          } else {
+            const imgUrl = await uploadImageToSupabase(partnerDoc, 'partner_docs');
+            uploadedImageUrl = imgUrl;
           }
         }
+
+        const partnerData: Record<string, any> = {
+          name: partnerForm.name, 
+          phone: partnerForm.phone, 
+          phone_2: partnerForm.phone_2,
+          address: partnerForm.address,
+          share_percentage: Number(partnerForm.share) || 0, 
+          initial_capital: Number(partnerForm.initialInvestment) || 0,
+          image_url: uploadedImageUrl,
+          document_url: uploadedDocKey,
+          ...(activeBusiness?.id && !isEditing && { business_id: activeBusiness.id })
+        };
+
         if (isEditing && selectedPartner) {
           await supabase.from('partners').update(partnerData).eq('id', selectedPartner.id);
         } else {
           await supabase.from('partners').insert([partnerData]);
         }
         fetchData();
+      } else {
+        if (isEditing && selectedPartner) {
+          setPartners(partners.map(p => p.id === selectedPartner.id ? { 
+            ...p, 
+            name: partnerForm.name, phone: partnerForm.phone, phone_2: partnerForm.phone_2, address: partnerForm.address,
+            share_percentage: Number(partnerForm.share) || 0, initial_capital: Number(partnerForm.initialInvestment) || 0,
+            image_url: partnerImage ? URL.createObjectURL(partnerImage) : p.image_url,
+            document_url: partnerDoc ? 'dummy-pdf-key' : p.document_url
+          } : p));
+        } else {
+          const newPartner: Partner = {
+            id: Date.now().toString(),
+            name: partnerForm.name,
+            phone: partnerForm.phone,
+            phone_2: partnerForm.phone_2,
+            address: partnerForm.address,
+            share_percentage: Number(partnerForm.share) || 0,
+            initial_capital: Number(partnerForm.initialInvestment) || 0,
+            image_url: partnerImage ? URL.createObjectURL(partnerImage) : '',
+            document_url: partnerDoc ? 'dummy-pdf-key' : '',
+            transactions: []
+          };
+          setPartners([newPartner, ...partners]);
+        }
       }
       setIsAddModalOpen(false);
-      showToast(isEditing ? 'আপডেট হয়েছে!' : 'যোগ হয়েছে!');
+      showToast(isEditing ? 'আপডেট হয়েছে!' : 'যোগ হয়েছে!');
     } catch (error: any) { showToast(error.message, 'error'); } finally { setIsSaving(false); }
   };
 
@@ -174,7 +215,7 @@ export default function PartnersPage({ onBack }: Props) {
     setIsSaving(true);
     try {
       const finalAmount = txType === 'investment' ? Number(txForm.amount) : -Number(txForm.amount);
-      const noteText = txForm.note || (txType === 'investment' ? 'মূলধন বিনিয়োগ' : 'ব্যক্তিগত উত্তোলন');
+      const noteText = txForm.note || (txType === 'investment' ? 'মূলধন বিনিয়োগ' : 'ব্যক্তিগত উত্তোলন');
 
       if (isDemoMode) {
         const newTx = { id: Date.now().toString(), amount: finalAmount, date: new Date().toISOString().split('T')[0], note: noteText };
@@ -201,27 +242,14 @@ export default function PartnersPage({ onBack }: Props) {
       if (isDemoMode) {
         setPartners(prev => prev.filter(p => p.id !== selectedPartner.id));
       } else {
-        // ১. প্রথমে পার্টনারের সব লেনদেন সফট-ডিলিট করুন
-        const { error: transError } = await supabase
-          .from('partner_transactions')
-          .update({ deleted_at: now })
-          .eq('partner_id', selectedPartner.id);
-          
-        if (transError) throw transError;
-
-        // ২. এরপর পার্টনার প্রোফাইল সফট-ডিলিট করুন
-        const { error: partnerError } = await supabase
-          .from('partners')
-          .update({ deleted_at: now })
-          .eq('id', selectedPartner.id);
-          
-        if (partnerError) throw partnerError;
-        fetchData(); // ডাটা রিফ্রেশ
+        await supabase.from('partner_transactions').update({ deleted_at: now }).eq('partner_id', selectedPartner.id);
+        await supabase.from('partners').update({ deleted_at: now }).eq('id', selectedPartner.id);
+        fetchData();
       }
       setSelectedPartner(null);
-      setIsDeleteModalOpen(false); // ✅ এররটি ঠিক করা হয়েছে
-      setIsDetailsModalOpen(false); // ডিটেইলস মডাল বন্ধ করা হলো
-      showToast('পার্টনার এবং তার লেনদেনসমূহ রিসাইকেল বিনে সরানো হয়েছে!');
+      setIsDeleteModalOpen(false);
+      setIsDetailsModalOpen(false);
+      showToast('পার্টনার এবং তার লেনদেনসমূহ রিসাইকেল বিনে সরানো হয়েছে!');
     } catch (error: any) {
       showToast('ডিলিট করতে সমস্যা: ' + error.message, 'error');
     } finally {
@@ -252,7 +280,7 @@ export default function PartnersPage({ onBack }: Props) {
             <Search size={18} className="text-da-textMuted" />
             <input type="text" placeholder="পার্টনার খুঁজুন..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full outline-none text-sm bg-transparent" />
           </div>
-          <button onClick={() => { setIsEditing(false); setPartnerForm({ name: '', phone: '', address: '', share: '', initialInvestment: '' }); setIsAddModalOpen(true); }} className="bg-da-depotBlue text-white px-4 rounded-xl font-bold text-sm shadow-md flex items-center gap-1.5 active:scale-95 transition shrink-0">
+          <button onClick={() => { setIsEditing(false); setPartnerForm({ name: '', phone: '', phone_2: '', address: '', share: '', initialInvestment: '' }); setPartnerImage(null); setPartnerDoc(null); setIsAddModalOpen(true); }} className="bg-da-depotBlue text-white px-4 rounded-xl font-bold text-sm shadow-md flex items-center gap-1.5 active:scale-95 transition shrink-0">
             <Plus size={18}/> নতুন
           </button>
         </div>
@@ -262,7 +290,7 @@ export default function PartnersPage({ onBack }: Props) {
         ) : filteredPartners.length === 0 ? (
           <div className="border-2 border-dashed border-da-cardBorder rounded-xl p-8 flex flex-col items-center justify-center text-center mt-4 bg-white/50">
             <UserPlus size={40} className="text-da-textMuted mb-3" />
-            <h3 className="font-bold text-da-textDark text-base">কোনো পার্টনার যুক্ত করা হয়নি</h3>
+            <h3 className="font-bold text-da-textDark text-base">কোনো পার্টনার যুক্ত করা হয়নি</h3>
             <button onClick={() => setIsAddModalOpen(true)} className="mt-4 bg-da-depotBlue text-white px-5 py-2 rounded-lg font-bold text-sm shadow-md">নতুন পার্টনার</button>
           </div>
         ) : (
@@ -275,13 +303,13 @@ export default function PartnersPage({ onBack }: Props) {
                     {partner.image_url ? <img src={partner.image_url} alt="" className="w-full h-full object-cover"/> : <UserPlus size={40} />}
                   </div>
                   <h3 className="font-bold text-[15px] text-da-textDark truncate w-full leading-tight">{partner.name}</h3>
-                  <p className="text-[10px] text-da-textMuted truncate w-full mt-0.5">{partner.address || 'ঠিকানা দেওয়া হয়নি'}</p>
+                  <p className="text-[10px] text-da-textMuted truncate w-full mt-0.5">{partner.address || 'ঠিকানা দেওয়া হয়নি'}</p>
                   <span className="text-[10px] font-bold text-da-depotBlue bg-da-depotBlue/10 px-2.5 py-0.5 rounded-full border border-da-depotBlue/20 mt-1.5 flex items-center gap-1">
-                    <Percent size={12}/> {toBangla(partner.share_percentage)}% শেয়ার
+                    <Percent size={12}/> {toBangla(partner.share_percentage)}% শেয়ার
                   </span>
                   <div className="w-full mt-1.5 pt-1.5 border-t border-da-cardBorder/60 flex flex-col gap-0.5 bg-white/60 rounded-lg px-1.5 py-1">
                     <div className="flex justify-between items-center w-full">
-                      <span className="text-[10px] text-da-textMuted font-bold">বিনিয়োগ:</span>
+                      <span className="text-[10px] text-da-textMuted font-bold">বিনিয়োগ:</span>
                       <span className="text-[11px] font-bold text-da-textDark">৳{toBangla(partner.initial_capital)}</span>
                     </div>
                     <div className="flex justify-between items-center w-full">
@@ -312,7 +340,9 @@ export default function PartnersPage({ onBack }: Props) {
                 </div>
                 <div>
                   <h2 className="font-bold text-lg">{selectedPartner.name}</h2>
-                  <p className="text-xs text-cyan-200">{toBangla(selectedPartner.share_percentage)}% শেয়ার হোল্ডার</p>
+                  <p className="text-xs text-cyan-200">
+                    {selectedPartner.phone} {(selectedPartner as any).phone_2 ? ` / ${(selectedPartner as any).phone_2}` : ''}
+                  </p>
                 </div>
               </div>
             </div>
@@ -324,14 +354,26 @@ export default function PartnersPage({ onBack }: Props) {
                 </div>
                 <div className="flex flex-col gap-1 text-[10px] font-bold text-right">
                   <span className="text-da-textMuted">প্রারম্ভিক: ৳{toBangla(selectedPartner.initial_capital)}</span>
-                  <span className="text-green-600">লাভের শেয়ার: ৳{toBangla((totalBusinessProfit * selectedPartner.share_percentage) / 100)}</span>
+                  <span className="text-green-600">লাভের শেয়ার: ৳{toBangla((totalBusinessProfit * selectedPartner.share_percentage) / 100)}</span>
                 </div>
               </div>
+
+              {/* ✅ ডকুমেন্ট দেখার বাটন */}
+              {(selectedPartner as any).document_url && (
+                <div className="bg-da-depotBg px-2 py-1.5 rounded-lg border border-da-cardBorder text-left flex items-start gap-1.5 mt-2">
+                  <FileText size={14} className="text-da-depotNavy shrink-0 mt-0.5" />
+                  <div className="flex flex-wrap gap-1.5 overflow-x-auto">
+                    <button onClick={() => handleViewDocument((selectedPartner as any).document_url)} disabled={loadingDocKey === (selectedPartner as any).document_url} className="text-[10px] font-bold text-da-depotBlue bg-white px-2 py-1 rounded border border-da-cardBorder whitespace-nowrap flex items-center gap-1 active:scale-95 transition">
+                      {loadingDocKey === (selectedPartner as any).document_url ? <Loader2 size={10} className="animate-spin" /> : <ExternalLink size={10} />} ডকুমেন্ট দেখুন
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
               <h3 className="font-bold text-[11px] text-da-textDark mb-1">লেনদেনের ইতিহাস</h3>
               {(!selectedPartner.transactions || selectedPartner.transactions.length === 0) ? (
-                <div className="text-center text-da-textMuted mt-6 text-xs flex flex-col items-center"><FileText size={32} className="mb-2 opacity-50"/> কোনো লেনদেন পাওয়া যায়নি</div>
+                <div className="text-center text-da-textMuted mt-6 text-xs flex flex-col items-center"><FileText size={32} className="mb-2 opacity-50"/> কোনো লেনদেন পাওয়া যায়নি</div>
               ) : (
                 selectedPartner.transactions.map(tx => (
                   <div key={tx.id} className="bg-white border border-da-cardBorder p-2.5 rounded-lg shadow-sm flex justify-between items-center">
@@ -346,7 +388,7 @@ export default function PartnersPage({ onBack }: Props) {
             </div>
             <div className="p-3 bg-white border-t flex gap-2 shrink-0">
               <button onClick={() => { setTxType('withdrawal'); setIsTxModalOpen(true); }} className="flex-1 bg-white border border-da-red text-da-red py-2.5 rounded-xl font-bold shadow-sm text-sm flex justify-center items-center gap-1"><TrendingDown size={16}/> টাকা উত্তোলন</button>
-              <button onClick={() => { setTxType('investment'); setIsTxModalOpen(true); }} className="flex-1 bg-da-depotBlue text-white py-2.5 rounded-xl font-bold shadow-md text-sm flex justify-center items-center gap-1"><TrendingUp size={16}/> নতুন বিনিয়োগ</button>
+              <button onClick={() => { setTxType('investment'); setIsTxModalOpen(true); }} className="flex-1 bg-da-depotBlue text-white py-2.5 rounded-xl font-bold shadow-md text-sm flex justify-center items-center gap-1"><TrendingUp size={16}/> নতুন বিনিয়োগ</button>
             </div>
           </div>
         </div>
@@ -359,8 +401,7 @@ export default function PartnersPage({ onBack }: Props) {
             <div className="p-5 text-center">
               <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3"><AlertTriangle size={26} className="text-red-600" /></div>
               <h3 className="font-bold text-base text-da-textDark mb-1">পার্টনার ডিলিট করবেন?</h3>
-              {/* টেক্সট পরিবর্তন করা হয়েছে */}
-              <p className="text-xs text-da-textMuted">"{selectedPartner.name}" এবং তার সব লেনদেন রিসাইকেল বিনে জমা হবে। সেখান থেকে যেকোনো সময় ফিরিয়ে আনা যাবে।</p>
+              <p className="text-xs text-da-textMuted">"{selectedPartner.name}" এবং তার সব লেনদেন রিসাইকেল বিনে জমা হবে। সেখান থেকে যেকোনো সময় ফিরিয়ে আনা যাবে।</p>
             </div>
             <div className="p-3 border-t bg-gray-50 flex gap-2">
               <button onClick={() => setIsDeleteModalOpen(false)} disabled={isDeleting} className="flex-1 bg-white border py-2 rounded-xl font-bold text-sm">বাতিল</button>
@@ -381,15 +422,26 @@ export default function PartnersPage({ onBack }: Props) {
             <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
               <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">পার্টনারের নাম *</label><input type="text" value={partnerForm.name} onChange={e => setPartnerForm({...partnerForm, name: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
               <div className="grid grid-cols-2 gap-2">
-                <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">শতাংশ (%)</label><input type="number" value={partnerForm.share} onChange={e => setPartnerForm({...partnerForm, share: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
-                <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">প্রারম্ভিক মূলধন (৳)</label><input type="number" value={partnerForm.initialInvestment} onChange={e => setPartnerForm({...partnerForm, initialInvestment: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
+                <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">শতাংশ (%)</label><input type="number" inputMode="decimal" value={partnerForm.share} onChange={e => setPartnerForm({...partnerForm, share: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
+                <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">প্রারম্ভিক মূলধন (৳)</label><input type="number" inputMode="decimal" value={partnerForm.initialInvestment} onChange={e => setPartnerForm({...partnerForm, initialInvestment: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
               </div>
-              <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">মোবাইল নম্বর</label><input type="text" value={partnerForm.phone} onChange={e => setPartnerForm({...partnerForm, phone: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
+              <div className="grid grid-cols-2 gap-2">
+                <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">মোবাইল নম্বর ১</label><input type="tel" inputMode="numeric" placeholder="01XXXXXXXXX" value={partnerForm.phone} onChange={e => setPartnerForm({...partnerForm, phone: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
+                <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">মোবাইল নম্বর ২</label><input type="tel" inputMode="numeric" placeholder="01XXXXXXXXX" value={partnerForm.phone_2} onChange={e => setPartnerForm({...partnerForm, phone_2: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
+              </div>
               <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">ঠিকানা</label><input type="text" value={partnerForm.address} onChange={e => setPartnerForm({...partnerForm, address: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
+              
               <div className="grid grid-cols-2 gap-2 mt-1">
-                <button onClick={() => imageInputRef.current?.click()} className="border border-dashed border-da-cardBorder rounded-lg p-2 flex flex-col items-center text-da-textMuted"><ImageIcon size={18} className={partnerImage ? 'text-da-green' : ''} /><span className="text-[10px] font-bold mt-1 truncate w-full text-center">{partnerImage ? partnerImage.name : 'পার্টনারের ছবি'}</span></button>
+                <button onClick={() => imageInputRef.current?.click()} className="border border-dashed border-da-cardBorder rounded-lg p-2 flex flex-col items-center text-da-textMuted">
+                  <ImageIcon size={18} className={partnerImage ? 'text-da-green' : ''} />
+                  <span className="text-[10px] font-bold mt-1 truncate w-full text-center">{partnerImage ? partnerImage.name : 'পার্টনারের ছবি'}</span>
+                </button>
                 <input type="file" ref={imageInputRef} onChange={e => setPartnerImage(e.target.files?.[0] || null)} accept="image/*" className="hidden" />
-                <button onClick={() => docInputRef.current?.click()} className="border border-dashed border-da-cardBorder rounded-lg p-2 flex flex-col items-center text-da-textMuted"><FileText size={18} className={partnerDoc ? 'text-da-green' : ''} /><span className="text-[10px] font-bold mt-1 truncate w-full text-center">{partnerDoc ? partnerDoc.name : 'ডকুমেন্ট (PDF)'}</span></button>
+                
+                <button onClick={() => docInputRef.current?.click()} className="border border-dashed border-da-cardBorder rounded-lg p-2 flex flex-col items-center text-da-textMuted">
+                  <FileText size={18} className={partnerDoc ? 'text-da-green' : ''} />
+                  <span className="text-[10px] font-bold mt-1 truncate w-full text-center">{partnerDoc ? partnerDoc.name : 'ডকুমেন্ট (PDF)'}</span>
+                </button>
                 <input type="file" ref={docInputRef} onChange={e => setPartnerDoc(e.target.files?.[0] || null)} accept=".pdf,image/*" className="hidden" />
               </div>
             </div>
@@ -406,7 +458,7 @@ export default function PartnersPage({ onBack }: Props) {
         <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white w-full max-w-xs rounded-2xl overflow-hidden flex flex-col shadow-2xl animate-in zoom-in-95 duration-200">
             <div className={`p-3 text-white flex justify-between items-center ${txType === 'investment' ? 'bg-da-depotBlue' : 'bg-da-red'}`}>
-              <h2 className="font-bold text-sm">{txType === 'investment' ? 'নতুন বিনিয়োগ যুক্ত করুন' : 'টাকা উত্তোলন করুন'}</h2>
+              <h2 className="font-bold text-sm">{txType === 'investment' ? 'নতুন বিনিয়োগ যুক্ত করুন' : 'টাকা উত্তোলন করুন'}</h2>
               <button onClick={() => setIsTxModalOpen(false)} className="p-1 bg-white/20 rounded-full"><X size={16}/></button>
             </div>
             <div className="p-4 flex flex-col gap-3">

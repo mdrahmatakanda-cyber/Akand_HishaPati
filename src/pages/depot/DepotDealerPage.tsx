@@ -3,13 +3,15 @@ import {
   ArrowLeft, Search, Plus, X, Loader2, 
   User, Phone, MapPin, Wallet, 
   ReceiptText, Clock, CheckCircle2, AlertTriangle, ArrowRightLeft,
-  Image as ImageIcon, FileText, Truck, Edit3, Store, Building2, Trash2
+  Image as ImageIcon, FileText, Truck, Edit3, Store, Building2, Trash2, ExternalLink
 } from 'lucide-react';
 import { toBangla } from '../../lib/utils';
 import { useAppContext } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { demoDepotDealers } from '../../lib/demoData';
+import { uploadImageToSupabase, uploadPdfToUpstash, getUpstashFileUrl } from '../../lib/upload';
+import PremiumToast from '../../components/PremiumToast';
 
 interface Props {
   onBack: () => void;
@@ -26,6 +28,7 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
   const [dealers, setDealers] = useState<any[]>([]);
   const [depots, setDepots] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadingDocKey, setLoadingDocKey] = useState<string | null>(null);
   
   const [selectedDealer, setSelectedDealer] = useState<any>(null);
   const [selectedDepot, setSelectedDepot] = useState<any>(null);
@@ -39,7 +42,7 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
   
   // ডিপো মডাল স্টেট
   const [isAddDepotModalOpen, setIsAddDepotModalOpen] = useState(false);
-  const [newDepotForm, setNewDepotForm] = useState({ name: '', depot_code: '', owner_name: '', owner_phone: '', address: '' });
+  const [newDepotForm, setNewDepotForm] = useState({ name: '', depot_code: '', owner_name: '', owner_phone: '', owner_phone_2: '', address: '' });
   
   // ডিপো আপলোড স্টেট
   const [depotImage, setDepotImage] = useState<File | null>(null);
@@ -48,23 +51,24 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
   const depotDocInputRef = useRef<HTMLInputElement>(null);
 
   // ডিলার ফর্ম স্টেট
-  const [newDealer, setNewDealer] = useState({ name: '', phone: '', area: '', dealer_code: '', previous_due: '' });
+  const [newDealer, setNewDealer] = useState({ name: '', phone: '', phone_2: '', area: '', dealer_code: '', previous_due: '' });
   const [dealerImage, setDealerImage] = useState<File | null>(null);
   const [dealerDoc, setDealerDoc] = useState<File | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const docInputRef = useRef<HTMLInputElement>(null);
+  
+  // ডিলার এডিট স্টেট
+  const [editDealerImage, setEditDealerImage] = useState<File | null>(null);
+  const [editDealerDoc, setEditDealerDoc] = useState<File | null>(null);
+  const editImageInputRef = useRef<HTMLInputElement>(null);
 
-  const [editDealerData, setEditDealerData] = useState({ name: '', phone: '', area: '', dealer_code: '', previous_due: '' });
+  const [editDealerData, setEditDealerData] = useState({ name: '', phone: '', phone_2: '', area: '', dealer_code: '', previous_due: '' });
   const [paymentAmount, setPaymentAmount] = useState('');
   const [deleteConfirmType, setDeleteConfirmType] = useState<'dealer' | 'depot' | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   
   const [toast, setToast] = useState<{ show: boolean, message: string, type: 'success' | 'error' }>({ show: false, message: '', type: 'success' });
-
-  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
-    setToast({ show: true, message, type });
-    setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000);
-  };
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => setToast({ show: true, message, type });
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -72,8 +76,8 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
       if (isDemoMode) {
         setDealers(demoDepotDealers);
         setDepots([
-          { id: 'dp1', name: "সেন্ট্রাল ডিপো", depot_code: "DP-001", owner_name: "আব্দুর রহিম", owner_phone: "01711111111", address: "ঢাকা", image_url: '', documents: [] },
-          { id: 'dp2', name: "গাজীপুর ডিপো", depot_code: "DP-002", owner_name: "করিম মিয়া", owner_phone: "01822222222", address: "গাজীপুর", image_url: '', documents: [] }
+          { id: 'dp1', name: "সেন্ট্রাল ডিপো", depot_code: "DP-001", owner_name: "আব্দুর রহিম", owner_phone: "01711111111", owner_phone_2: "01811111111", address: "ঢাকা", image_url: '', documents: [] },
+          { id: 'dp2', name: "গাজীপুর ডিপো", depot_code: "DP-002", owner_name: "করিম মিয়া", owner_phone: "01822222222", owner_phone_2: "", address: "গাজীপুর", image_url: '', documents: [] }
         ]);
       } else {
         if (!activeBusiness?.id) return;
@@ -90,8 +94,7 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
         setDepots(depRes.data || []);
       }
     } catch (error: any) {
-      console.error(error);
-      showToast('ডাটা লোড করতে সমস্যা হয়েছে', 'error');
+      showToast('ডাটা লোড করতে সমস্যা হয়েছে', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -111,12 +114,56 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
 
   const totalDealerDue = dealers.reduce((acc, curr) => acc + Number(curr.due_balance || 0), 0);
 
+  // ✅ ফাইল দেখার ফাংশন
+  const handleViewDocument = async (fileKey: string) => {
+    try {
+      if (fileKey.startsWith('http')) {
+        window.open(fileKey, '_blank');
+      } else {
+        setLoadingDocKey(fileKey);
+        const url = await getUpstashFileUrl(fileKey);
+        window.open(url, '_blank');
+        setLoadingDocKey(null);
+      }
+    } catch (error: any) {
+      showToast('ফাইল দেখতে সমস্যা হয়েছে: ' + error.message, 'error');
+      setLoadingDocKey(null);
+    }
+  };
+
   // --- ডিলার ফাংশন ---
   const handleAddDealer = async () => {
     if (!newDealer.name || !newDealer.phone) return showToast('নাম এবং মোবাইল নম্বর আবশ্যক', 'error');
     setIsSaving(true);
     try {
-      if (isDemoMode) {
+      let uploadedImageUrl = '';
+      let uploadedDocKey = '';
+
+      if (!isDemoMode && activeBusiness?.id) {
+        if (dealerImage) uploadedImageUrl = await uploadImageToSupabase(dealerImage, 'dealers');
+        if (dealerDoc) {
+          if (dealerDoc.type === 'application/pdf') {
+            const { fileKey } = await uploadPdfToUpstash(dealerDoc);
+            uploadedDocKey = fileKey;
+          } else {
+            uploadedImageUrl = await uploadImageToSupabase(dealerDoc, 'dealer_docs');
+          }
+        }
+
+        const { error } = await supabase.from('dealers').insert([{
+          business_id: activeBusiness.id,
+          dealer_code: newDealer.dealer_code,
+          name: newDealer.name,
+          phone: newDealer.phone,
+          phone_2: newDealer.phone_2,
+          area: newDealer.area,
+          due_balance: Number(newDealer.previous_due) || 0,
+          image_url: uploadedImageUrl,
+          documents: uploadedDocKey ? [uploadedDocKey] : []
+        }]);
+        if (error) throw error;
+        fetchData();
+      } else {
         const newD = {
           id: Date.now().toString(), ...newDealer,
           due_balance: Number(newDealer.previous_due) || 0,
@@ -124,22 +171,12 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
           documents: dealerDoc ? [dealerDoc.name] : []
         };
         setDealers([newD, ...dealers]);
-      } else {
-        const { error } = await supabase.from('dealers').insert([{
-          business_id: activeBusiness?.id,
-          dealer_code: newDealer.dealer_code,
-          name: newDealer.name,
-          phone: newDealer.phone,
-          area: newDealer.area,
-          due_balance: Number(newDealer.previous_due) || 0,
-        }]);
-        if (error) throw error;
-        fetchData();
       }
+      
       setIsAddDealerModalOpen(false);
-      setNewDealer({ name: '', phone: '', area: '', dealer_code: '', previous_due: '' });
+      setNewDealer({ name: '', phone: '', phone_2: '', area: '', dealer_code: '', previous_due: '' });
       setDealerImage(null); setDealerDoc(null);
-      showToast('নতুন ডিলার যোগ হয়েছে!');
+      showToast('নতুন ডিলার যোগ হয়েছে!');
     } catch (error: any) { showToast(error.message, 'error'); } finally { setIsSaving(false); }
   };
 
@@ -147,9 +184,11 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
     if (e) e.stopPropagation();
     setSelectedDealer(dealer);
     setEditDealerData({
-      name: dealer.name || '', phone: dealer.phone || '', area: dealer.area || '',
+      name: dealer.name || '', phone: dealer.phone || '', phone_2: dealer.phone_2 || '', area: dealer.area || '',
       dealer_code: dealer.dealer_code || '', previous_due: dealer.due_balance ? dealer.due_balance.toString() : '0'
     });
+    setEditDealerImage(null);
+    setEditDealerDoc(null);
     setIsEditingProfile(false);
     setIsProfileModalOpen(true);
   };
@@ -158,24 +197,42 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
     if (!editDealerData.name || !editDealerData.phone) return showToast('নাম এবং মোবাইল আবশ্যক', 'error');
     setIsSaving(true);
     try {
-      if (isDemoMode) {
+      let uploadedImageUrl = selectedDealer.image_url || '';
+      let uploadedDocKey = selectedDealer.documents?.[0] || '';
+
+      if (!isDemoMode && activeBusiness?.id) {
+        if (editDealerImage) uploadedImageUrl = await uploadImageToSupabase(editDealerImage, 'dealers');
+        
+        if (editDealerDoc) {
+          if (editDealerDoc.type === 'application/pdf') {
+            const { fileKey } = await uploadPdfToUpstash(editDealerDoc);
+            uploadedDocKey = fileKey;
+          } else {
+            uploadedImageUrl = await uploadImageToSupabase(editDealerDoc, 'dealer_docs');
+          }
+        }
+
+        const { error } = await supabase.from('dealers').update({
+          name: editDealerData.name, phone: editDealerData.phone, phone_2: editDealerData.phone_2, area: editDealerData.area,
+          dealer_code: editDealerData.dealer_code, due_balance: Number(editDealerData.previous_due),
+          image_url: uploadedImageUrl, documents: uploadedDocKey ? [uploadedDocKey] : []
+        }).eq('id', selectedDealer.id);
+        
+        if (error) throw error;
+        fetchData();
+        setSelectedDealer({ ...selectedDealer, name: editDealerData.name, phone: editDealerData.phone, phone_2: editDealerData.phone_2, area: editDealerData.area, dealer_code: editDealerData.dealer_code, due_balance: Number(editDealerData.previous_due), image_url: uploadedImageUrl, documents: uploadedDocKey ? [uploadedDocKey] : [] });
+      } else {
         const updated = dealers.map(d => d.id === selectedDealer.id ? {
-          ...d, name: editDealerData.name, phone: editDealerData.phone, area: editDealerData.area,
-          dealer_code: editDealerData.dealer_code, due_balance: Number(editDealerData.previous_due)
+          ...d, name: editDealerData.name, phone: editDealerData.phone, phone_2: editDealerData.phone_2, area: editDealerData.area,
+          dealer_code: editDealerData.dealer_code, due_balance: Number(editDealerData.previous_due),
+          image_url: editDealerImage ? URL.createObjectURL(editDealerImage) : d.image_url,
+          documents: editDealerDoc ? [editDealerDoc.name] : d.documents
         } : d);
         setDealers(updated);
         setSelectedDealer(updated.find(d => d.id === selectedDealer.id));
-      } else {
-        const { error } = await supabase.from('dealers').update({
-          name: editDealerData.name, phone: editDealerData.phone, area: editDealerData.area,
-          dealer_code: editDealerData.dealer_code, due_balance: Number(editDealerData.previous_due)
-        }).eq('id', selectedDealer.id);
-        if (error) throw error;
-        fetchData();
-        setSelectedDealer({ ...selectedDealer, name: editDealerData.name, phone: editDealerData.phone, area: editDealerData.area, dealer_code: editDealerData.dealer_code, due_balance: Number(editDealerData.previous_due) });
       }
       setIsEditingProfile(false);
-      showToast('ডিলারের তথ্য আপডেট হয়েছে!');
+      showToast('ডিলারের তথ্য আপডেট হয়েছে!');
     } catch (error: any) { showToast(error.message, 'error'); } finally { setIsSaving(false); }
   };
 
@@ -201,20 +258,13 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
     if (!selectedDealer) return;
     setIsDeleting(true);
     try {
-      if (isDemoMode) {
-        setDealers(prev => prev.filter(d => d.id !== selectedDealer.id));
-      } else {
-        const { error } = await supabase
-          .from('dealers')
-          .update({ deleted_at: new Date().toISOString() })
-          .eq('id', selectedDealer.id);
+      if (isDemoMode) setDealers(prev => prev.filter(d => d.id !== selectedDealer.id));
+      else {
+        const { error } = await supabase.from('dealers').update({ deleted_at: new Date().toISOString() }).eq('id', selectedDealer.id);
         if (error) throw error;
         fetchData();
       }
-      setIsProfileModalOpen(false);
-      setSelectedDealer(null);
-      setDeleteConfirmType(null);
-      showToast('ডিলার ডিলিট হয়েছে!');
+      setIsProfileModalOpen(false); setSelectedDealer(null); setDeleteConfirmType(null); showToast('ডিলার ডিলিট হয়েছে!');
     } catch (error: any) { showToast(error.message, 'error'); } finally { setIsDeleting(false); }
   };
 
@@ -222,19 +272,13 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
     if (!selectedDepot) return;
     setIsDeleting(true);
     try {
-      if (isDemoMode) {
-        setDepots(prev => prev.filter(d => d.id !== selectedDepot.id));
-      } else {
-        const { error } = await supabase
-          .from('depots')
-          .update({ deleted_at: new Date().toISOString() })
-          .eq('id', selectedDepot.id);
+      if (isDemoMode) setDepots(prev => prev.filter(d => d.id !== selectedDepot.id));
+      else {
+        const { error } = await supabase.from('depots').update({ deleted_at: new Date().toISOString() }).eq('id', selectedDepot.id);
         if (error) throw error;
         fetchData();
       }
-      setSelectedDepot(null);
-      setDeleteConfirmType(null);
-      showToast('ডিপো ডিলিট হয়েছে!');
+      setSelectedDepot(null); setDeleteConfirmType(null); showToast('ডিপো ডিলিট হয়েছে!');
     } catch (error: any) { showToast(error.message, 'error'); } finally { setIsDeleting(false); }
   };
 
@@ -243,7 +287,34 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
     if (!newDepotForm.name) return showToast('ডিপোর নাম আবশ্যক', 'error');
     setIsSaving(true);
     try {
-      if (isDemoMode) {
+      let uploadedImageUrl = '';
+      let uploadedDocKey = '';
+
+      if (!isDemoMode && activeBusiness?.id) {
+        if (depotImage) uploadedImageUrl = await uploadImageToSupabase(depotImage, 'depots');
+        if (depotDoc) {
+          if (depotDoc.type === 'application/pdf') {
+            const { fileKey } = await uploadPdfToUpstash(depotDoc);
+            uploadedDocKey = fileKey;
+          } else {
+            uploadedImageUrl = await uploadImageToSupabase(depotDoc, 'depot_docs');
+          }
+        }
+
+        const { error } = await supabase.from('depots').insert([{
+          business_id: activeBusiness.id,
+          name: newDepotForm.name,
+          depot_code: newDepotForm.depot_code,
+          owner_name: newDepotForm.owner_name,
+          owner_phone: newDepotForm.owner_phone,
+          owner_phone_2: newDepotForm.owner_phone_2,
+          address: newDepotForm.address,
+          image_url: uploadedImageUrl,
+          documents: uploadedDocKey ? [uploadedDocKey] : []
+        }]);
+        if (error) throw error;
+        fetchData();
+      } else {
         const newD = { 
           id: Date.now().toString(), 
           ...newDepotForm,
@@ -251,36 +322,19 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
           documents: depotDoc ? [depotDoc.name] : []
         };
         setDepots([newD, ...depots]);
-      } else {
-        const { error } = await supabase.from('depots').insert([{
-          business_id: activeBusiness?.id,
-          name: newDepotForm.name,
-          depot_code: newDepotForm.depot_code,
-          owner_name: newDepotForm.owner_name,
-          owner_phone: newDepotForm.owner_phone,
-          address: newDepotForm.address
-        }]);
-        if (error) throw error;
-        fetchData();
       }
+      
       setIsAddDepotModalOpen(false);
-      setNewDepotForm({ name: '', depot_code: '', owner_name: '', owner_phone: '', address: '' });
+      setNewDepotForm({ name: '', depot_code: '', owner_name: '', owner_phone: '', owner_phone_2: '', address: '' });
       setDepotImage(null); setDepotDoc(null);
-      showToast('নতুন ডিপো যোগ হয়েছে!');
+      showToast('নতুন ডিপো যোগ হয়েছে!');
     } catch (error: any) { showToast(error.message, 'error'); } finally { setIsSaving(false); }
   };
 
   return (
     <div className="h-[100dvh] bg-da-depotBg text-da-textDark font-serif flex flex-col overflow-hidden w-full relative">
       
-      {toast.show && (
-        <div className={`fixed top-12 left-1/2 -translate-x-1/2 z-[999] w-[280px] px-5 py-4 rounded-2xl shadow-2xl flex flex-col items-center justify-center gap-2 animate-in slide-in-from-top-8 fade-in duration-300 border border-white/20 ${toast.type === 'success' ? 'bg-da-greenDeep' : 'bg-da-red'} text-white`}>
-          <div className="w-10 h-10 bg-white/15 rounded-full flex items-center justify-center shadow-inner">
-            {toast.type === 'success' ? <CheckCircle2 size={24} /> : <AlertTriangle size={24} />}
-          </div>
-          <span className="text-sm font-bold text-center leading-snug">{toast.message}</span>
-        </div>
-      )}
+      <PremiumToast show={toast.show} message={toast.message} type={toast.type} onClose={() => setToast({ ...toast, show: false })} />
 
       <header className="bg-da-depotNavy text-white shadow-md shrink-0 z-40">
         <div className="px-3 py-2.5 flex items-center justify-between">
@@ -337,7 +391,7 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
             {isLoading ? (
               <div className="flex justify-center items-center mt-10"><Loader2 className="animate-spin text-da-depotBlue" size={32}/></div>
             ) : filteredList.length === 0 ? (
-              <div className="text-center text-da-textMuted mt-10 text-sm font-bold">কোনো ডিলার পাওয়া যায়নি</div>
+              <div className="text-center text-da-textMuted mt-10 text-sm font-bold">কোনো ডিলার পাওয়া যায়নি</div>
             ) : (
               <div className="flex flex-col gap-1.5">
                 {filteredList.map(dealer => (
@@ -352,7 +406,7 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
                           {dealer.dealer_code && <span className="text-[9px] bg-da-depotBlue/10 text-da-depotBlue px-1 rounded border border-da-depotBlue/20">{dealer.dealer_code}</span>}
                         </div>
                         <p className="text-[10px] text-da-textMuted truncate flex items-center gap-1.5 mt-0.5">
-                          <Phone size={10} /> {dealer.phone} {dealer.area ? `| ${dealer.area}` : ''}
+                          <Phone size={10} /> {dealer.phone} {dealer.phone_2 ? ` / ${dealer.phone_2}` : ''} {dealer.area ? `| ${dealer.area}` : ''}
                         </p>
                       </div>
                     </div>
@@ -385,7 +439,7 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
             {isLoading ? (
               <div className="flex justify-center items-center mt-10"><Loader2 className="animate-spin text-da-depotBlue" size={32}/></div>
             ) : filteredList.length === 0 ? (
-              <div className="text-center text-da-textMuted mt-10 text-sm font-bold">কোনো ডিপো পাওয়া যায়নি</div>
+              <div className="text-center text-da-textMuted mt-10 text-sm font-bold">কোনো ডিপো পাওয়া যায়নি</div>
             ) : (
               <div className="flex flex-col gap-1.5">
                 {filteredList.map(depot => (
@@ -404,7 +458,7 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
                           {depot.depot_code && <span className="text-[9px] bg-da-depotBlue/10 text-da-depotBlue px-1 rounded border border-da-depotBlue/20">{depot.depot_code}</span>}
                         </div>
                         <p className="text-[10px] text-da-textMuted truncate flex items-center gap-1.5 mt-0.5">
-                          <User size={10} /> {depot.owner_name || 'মালিক নেই'} | <Phone size={10} /> {depot.owner_phone || 'নেই'}
+                          <User size={10} /> {depot.owner_name || 'মালিক নেই'} | <Phone size={10} /> {depot.owner_phone} {depot.owner_phone_2 ? ` / ${depot.owner_phone_2}` : ''}
                         </p>
                       </div>
                     </div>
@@ -426,13 +480,26 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
                 </div>
                 <h2 className="font-black text-lg text-da-textDark group-hover:text-da-depotBlue transition-colors">{selectedDealer.name}</h2>
               </div>
-              <p className="text-sm text-da-textMuted flex items-center gap-1 mt-1"><Phone size={12}/> {selectedDealer.phone}</p>
+              <p className="text-sm text-da-textMuted flex items-center gap-1 mt-1"><Phone size={12}/> {selectedDealer.phone} {selectedDealer.phone_2 ? ` / ${selectedDealer.phone_2}` : ''}</p>
               {selectedDealer.area && <p className="text-xs text-da-textMuted flex items-center gap-1 mt-1"><MapPin size={12}/> {selectedDealer.area}</p>}
               
               <div className="w-full mt-3 pt-3 border-t border-da-cardBorder flex justify-between items-center">
                 <span className="text-sm font-bold text-da-textDark">বর্তমান বাকি</span>
                 <span className={`font-black text-xl ${Number(selectedDealer.due_balance) > 0 ? 'text-da-red' : 'text-da-green'}`}>৳{toBangla(selectedDealer.due_balance)}</span>
               </div>
+
+              {selectedDealer.documents && selectedDealer.documents.length > 0 && (
+                <div className="w-full mt-2 bg-da-depotBg px-2 py-1.5 rounded-lg border border-da-cardBorder text-left flex items-start gap-1.5">
+                  <FileText size={14} className="text-da-depotNavy shrink-0 mt-0.5" />
+                  <div className="flex flex-wrap gap-1.5 overflow-x-auto">
+                    {selectedDealer.documents.map((doc: string, idx: number) => (
+                      <button key={idx} onClick={() => handleViewDocument(doc)} disabled={loadingDocKey === doc} className="text-[10px] font-bold text-da-depotBlue bg-white px-2 py-1 rounded border border-da-cardBorder whitespace-nowrap flex items-center gap-1 active:scale-95 transition">
+                        {loadingDocKey === doc ? <Loader2 size={10} className="animate-spin" /> : <ExternalLink size={10} />} ডকুমেন্ট দেখুন
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-3 gap-1.5 shrink-0">
@@ -455,7 +522,7 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
                 <div className="w-12 h-12 rounded-full bg-da-depotBg flex items-center justify-center mb-2">
                   <ArrowRightLeft size={20} className="text-da-depotBlue/50" />
                 </div>
-                <p className="text-xs text-da-textMuted font-bold">এই ডিলারের কোনো লেনদেন পাওয়া যায়নি।</p>
+                <p className="text-xs text-da-textMuted font-bold">এই ডিলারের কোনো লেনদেন পাওয়া যায়নি।</p>
               </div>
             </div>
           </>
@@ -476,14 +543,17 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
                   <User className="text-da-depotNavy" size={18} />
                   <div>
                     <p className="text-[10px] text-da-textMuted font-bold">ডিপো মালিক</p>
-                    <p className="text-sm font-bold text-da-textDark">{selectedDepot.owner_name || 'দেওয়া হয়নি'}</p>
+                    <p className="text-sm font-bold text-da-textDark">{selectedDepot.owner_name || 'দেওয়া হয়নি'}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 bg-da-depotBg p-2.5 rounded-lg border border-da-cardBorder text-left">
                   <Phone className="text-da-depotNavy" size={18} />
                   <div>
                     <p className="text-[10px] text-da-textMuted font-bold">মোবাইল নম্বর</p>
-                    <p className="text-sm font-bold text-da-textDark">{selectedDepot.owner_phone || 'দেওয়া হয়নি'}</p>
+                    <p className="text-sm font-bold text-da-textDark">
+                      {selectedDepot.owner_phone || 'দেওয়া হয়নি'} 
+                      {selectedDepot.owner_phone_2 ? ` / ${selectedDepot.owner_phone_2}` : ''}
+                    </p>
                   </div>
                 </div>
                 {selectedDepot.address && (
@@ -496,6 +566,19 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
                   </div>
                 )}
               </div>
+
+              {selectedDepot.documents && selectedDepot.documents.length > 0 && (
+                <div className="w-full mt-2 bg-da-depotBg px-2 py-1.5 rounded-lg border border-da-cardBorder text-left flex items-start gap-1.5">
+                  <FileText size={14} className="text-da-depotNavy shrink-0 mt-0.5" />
+                  <div className="flex flex-wrap gap-1.5 overflow-x-auto">
+                    {selectedDepot.documents.map((doc: string, idx: number) => (
+                      <button key={idx} onClick={() => handleViewDocument(doc)} disabled={loadingDocKey === doc} className="text-[10px] font-bold text-da-depotBlue bg-white px-2 py-1 rounded border border-da-cardBorder whitespace-nowrap flex items-center gap-1 active:scale-95 transition">
+                        {loadingDocKey === doc ? <Loader2 size={10} className="animate-spin" /> : <ExternalLink size={10} />} ডকুমেন্ট দেখুন
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-2 shrink-0 mt-1">
@@ -529,7 +612,7 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
         </div>
       )}
 
-      {/* ==================== নতুন ডিলার মডাল (আগের মতোই) ==================== */}
+      {/* ==================== নতুন ডিলার মডাল ==================== */}
       {isAddDealerModalOpen && (
         <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90dvh] flex flex-col">
@@ -539,29 +622,18 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
             </div>
             <div className="p-4 flex flex-col gap-3 overflow-y-auto">
               <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[11px] font-bold text-da-textMuted mb-1 block">ডিলারের নাম *</label>
-                  <input type="text" value={newDealer.name} onChange={e => setNewDealer({...newDealer, name: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-da-textMuted mb-1 block">ডিলার আইডি</label>
-                  <input type="text" value={newDealer.dealer_code} onChange={e => setNewDealer({...newDealer, dealer_code: e.target.value})} placeholder="DLR-001" className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" />
-                </div>
+                <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">ডিলারের নাম *</label><input type="text" value={newDealer.name} onChange={e => setNewDealer({...newDealer, name: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
+                <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">ডিলার আইডি</label><input type="text" value={newDealer.dealer_code} onChange={e => setNewDealer({...newDealer, dealer_code: e.target.value})} placeholder="DLR-001" className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[11px] font-bold text-da-textMuted mb-1 block">ফোন নম্বর *</label>
-                  <input type="tel" value={newDealer.phone} onChange={e => setNewDealer({...newDealer, phone: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-da-textMuted mb-1 block">পূর্বের বাকি</label>
-                  <input type="number" value={newDealer.previous_due} onChange={e => setNewDealer({...newDealer, previous_due: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" />
-                </div>
+                <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">ফোন ১ *</label><input type="tel" inputMode="numeric" value={newDealer.phone} onChange={e => setNewDealer({...newDealer, phone: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
+                <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">ফোন ২</label><input type="tel" inputMode="numeric" value={newDealer.phone_2} onChange={e => setNewDealer({...newDealer, phone_2: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
               </div>
-              <div>
-                <label className="text-[11px] font-bold text-da-textMuted mb-1 block">ঠিকানা / এলাকা</label>
-                <input type="text" value={newDealer.area} onChange={e => setNewDealer({...newDealer, area: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" />
+              <div className="grid grid-cols-2 gap-2">
+                <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">পূর্বের বাকি</label><input type="number" value={newDealer.previous_due} onChange={e => setNewDealer({...newDealer, previous_due: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
+                <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">ঠিকানা / এলাকা</label><input type="text" value={newDealer.area} onChange={e => setNewDealer({...newDealer, area: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
               </div>
+              
               <div className="grid grid-cols-2 gap-2 mt-1">
                 <button onClick={() => imageInputRef.current?.click()} className="border border-dashed border-da-cardBorder rounded-lg p-2 flex flex-col items-center text-da-textMuted">
                   <ImageIcon size={18} className={dealerImage ? 'text-da-green' : ''} />
@@ -583,7 +655,7 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
         </div>
       )}
 
-      {/* ==================== নতুন ডিপো মডাল (আপলোডসহ) ==================== */}
+      {/* ==================== নতুন ডিপো মডাল ==================== */}
       {isAddDepotModalOpen && (
         <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90dvh] flex flex-col">
@@ -593,38 +665,22 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
             </div>
             <div className="p-4 flex flex-col gap-3 overflow-y-auto">
               <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[11px] font-bold text-da-textMuted mb-1 block">ডিপোর নাম *</label>
-                  <input type="text" value={newDepotForm.name} onChange={e => setNewDepotForm({...newDepotForm, name: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-da-textMuted mb-1 block">ডিপো কোড</label>
-                  <input type="text" value={newDepotForm.depot_code} onChange={e => setNewDepotForm({...newDepotForm, depot_code: e.target.value})} placeholder="DP-001" className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" />
-                </div>
+                <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">ডিপোর নাম *</label><input type="text" value={newDepotForm.name} onChange={e => setNewDepotForm({...newDepotForm, name: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
+                <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">ডিপো কোড</label><input type="text" value={newDepotForm.depot_code} onChange={e => setNewDepotForm({...newDepotForm, depot_code: e.target.value})} placeholder="DP-001" className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[11px] font-bold text-da-textMuted mb-1 block">মালিকের নাম</label>
-                  <input type="text" value={newDepotForm.owner_name} onChange={e => setNewDepotForm({...newDepotForm, owner_name: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-da-textMuted mb-1 block">মালিকের ফোন</label>
-                  <input type="tel" value={newDepotForm.owner_phone} onChange={e => setNewDepotForm({...newDepotForm, owner_phone: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" />
-                </div>
-              </div>
-              <div>
-                <label className="text-[11px] font-bold text-da-textMuted mb-1 block">ঠিকানা</label>
-                <input type="text" value={newDepotForm.address} onChange={e => setNewDepotForm({...newDepotForm, address: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" />
+                <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">মালিকের নাম</label><input type="text" value={newDepotForm.owner_name} onChange={e => setNewDepotForm({...newDepotForm, owner_name: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
+                <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">মালিকের ফোন ১</label><input type="tel" inputMode="numeric" value={newDepotForm.owner_phone} onChange={e => setNewDepotForm({...newDepotForm, owner_phone: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
+                <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">মালিকের ফোন ২</label><input type="tel" inputMode="numeric" value={newDepotForm.owner_phone_2} onChange={e => setNewDepotForm({...newDepotForm, owner_phone_2: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
+                <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">ঠিকানা</label><input type="text" value={newDepotForm.address} onChange={e => setNewDepotForm({...newDepotForm, address: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
               </div>
               
-              {/* ডিপো আপলোড অপশন */}
               <div className="grid grid-cols-2 gap-2 mt-1">
                 <button onClick={() => depotImageInputRef.current?.click()} className="border border-dashed border-da-cardBorder rounded-lg p-2 flex flex-col items-center text-da-textMuted">
                   <ImageIcon size={18} className={depotImage ? 'text-da-green' : ''} />
                   <span className="text-[10px] font-bold mt-1 truncate w-full text-center">{depotImage ? depotImage.name : 'ডিপোর ছবি'}</span>
                 </button>
                 <input type="file" ref={depotImageInputRef} onChange={e => setDepotImage(e.target.files?.[0] || null)} accept="image/*" className="hidden" />
-                
                 <button onClick={() => depotDocInputRef.current?.click()} className="border border-dashed border-da-cardBorder rounded-lg p-2 flex flex-col items-center text-da-textMuted">
                   <FileText size={18} className={depotDoc ? 'text-da-green' : ''} />
                   <span className="text-[10px] font-bold mt-1 truncate w-full text-center">{depotDoc ? depotDoc.name : 'ডকুমেন্ট (PDF)'}</span>
@@ -640,7 +696,7 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
         </div>
       )}
 
-      {/* ডিলার প্রোফাইল মডাল এবং পেমেন্ট মডাল (আগের মতোই) */}
+      {/* ==================== ডিলার প্রোফাইল মডাল ==================== */}
       {isProfileModalOpen && selectedDealer && (
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90dvh] flex flex-col">
@@ -656,10 +712,12 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
               </div>
             </div>
             <div className="p-5 flex flex-col items-center overflow-y-auto">
-              <div className="w-24 h-24 bg-da-depotBg rounded-full flex items-center justify-center text-da-depotBlue mb-3 border-4 border-da-depotNavy/10 overflow-hidden shadow-inner relative group">
-                {selectedDealer.image_url ? <img src={selectedDealer.image_url} alt={selectedDealer.name} className="w-full h-full object-cover" /> : <User size={48} />}
-                {isEditingProfile && <div className="absolute inset-0 bg-black/40 flex items-center justify-center cursor-pointer"><ImageIcon size={24} className="text-white" /></div>}
+              
+              <div onClick={() => isEditingProfile && editImageInputRef.current?.click()} className="w-24 h-24 bg-da-depotBg rounded-full flex items-center justify-center text-da-depotBlue mb-3 border-4 border-da-depotNavy/10 overflow-hidden shadow-inner relative group cursor-pointer">
+                {editDealerImage ? <img src={URL.createObjectURL(editDealerImage)} alt="" className="w-full h-full object-cover" /> : selectedDealer.image_url ? <img src={selectedDealer.image_url} alt={selectedDealer.name} className="w-full h-full object-cover" /> : <User size={48} />}
+                {isEditingProfile && <div className="absolute inset-0 bg-black/40 flex items-center justify-center"><ImageIcon size={24} className="text-white" /></div>}
               </div>
+              <input type="file" ref={editImageInputRef} onChange={e => setEditDealerImage(e.target.files?.[0] || null)} accept="image/*" className="hidden" />
 
               {!isEditingProfile ? (
                 <>
@@ -669,7 +727,7 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
                       <Phone className="text-da-depotNavy" size={18} />
                       <div>
                         <p className="text-[10px] text-da-textMuted font-bold">মোবাইল নম্বর</p>
-                        <p className="text-sm font-bold text-da-textDark">{selectedDealer.phone}</p>
+                        <p className="text-sm font-bold text-da-textDark">{selectedDealer.phone} {selectedDealer.phone_2 ? ` / ${selectedDealer.phone_2}` : ''}</p>
                       </div>
                     </div>
                     {selectedDealer.area && (
@@ -688,12 +746,13 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
                   <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">ডিলারের নাম</label><input type="text" value={editDealerData.name} onChange={e => setEditDealerData({...editDealerData, name: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
                   <div className="grid grid-cols-2 gap-2">
                     <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">ডিলার আইডি</label><input type="text" value={editDealerData.dealer_code} onChange={e => setEditDealerData({...editDealerData, dealer_code: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
-                    <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">ফোন</label><input type="tel" value={editDealerData.phone} onChange={e => setEditDealerData({...editDealerData, phone: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
+                    <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">ফোন ১</label><input type="tel" inputMode="numeric" value={editDealerData.phone} onChange={e => setEditDealerData({...editDealerData, phone: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
-                    <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">ঠিকানা</label><input type="text" value={editDealerData.area} onChange={e => setEditDealerData({...editDealerData, area: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
+                    <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">ফোন ২</label><input type="tel" inputMode="numeric" value={editDealerData.phone_2} onChange={e => setEditDealerData({...editDealerData, phone_2: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
                     <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">পূর্বের বাকি</label><input type="number" value={editDealerData.previous_due} onChange={e => setEditDealerData({...editDealerData, previous_due: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
                   </div>
+                  <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">ঠিকানা</label><input type="text" value={editDealerData.area} onChange={e => setEditDealerData({...editDealerData, area: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
                 </div>
               )}
             </div>
@@ -702,7 +761,6 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
                 onClick={() => setDeleteConfirmType('dealer')}
                 disabled={isSaving}
                 className="bg-red-50 text-da-red border border-da-red/30 px-3 py-2.5 rounded-xl font-bold shadow-sm flex items-center gap-1 active:scale-95 transition disabled:opacity-50"
-                title="ডিলার ডিলিট করুন"
               >
                 <Trash2 size={16} />
               </button>
@@ -716,6 +774,7 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
         </div>
       )}
 
+      {/* পেমেন্ট মডাল */}
       {isPaymentModalOpen && (
         <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
@@ -745,7 +804,7 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
         </div>
       )}
 
-      {/* ============ ডিলিট কনফার্মেশন মডাল ============ */}
+      {/* ডিলিট কনফার্মেশন মডাল */}
       {deleteConfirmType && (
         <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl w-full max-w-xs overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
@@ -763,16 +822,8 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
               </p>
             </div>
             <div className="p-3 border-t border-da-cardBorder bg-da-depotBg flex gap-2">
-              <button
-                onClick={() => setDeleteConfirmType(null)}
-                disabled={isDeleting}
-                className="flex-1 bg-white border border-da-cardBorder text-da-textMuted py-2 rounded-xl font-bold disabled:opacity-50"
-              >বাতিল</button>
-              <button
-                onClick={deleteConfirmType === 'dealer' ? handleDeleteDealer : handleDeleteDepot}
-                disabled={isDeleting}
-                className="flex-1 bg-da-red text-white py-2 rounded-xl font-bold shadow-md flex justify-center items-center gap-1.5 disabled:opacity-60"
-              >
+              <button onClick={() => setDeleteConfirmType(null)} disabled={isDeleting} className="flex-1 bg-white border border-da-cardBorder text-da-textMuted py-2 rounded-xl font-bold disabled:opacity-50">বাতিল</button>
+              <button onClick={deleteConfirmType === 'dealer' ? handleDeleteDealer : handleDeleteDepot} disabled={isDeleting} className="flex-1 bg-da-red text-white py-2 rounded-xl font-bold shadow-md flex justify-center items-center gap-1.5 disabled:opacity-60">
                 {isDeleting ? <Loader2 size={14} className="animate-spin"/> : <Trash2 size={14}/>} ডিলিট
               </button>
             </div>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   ArrowLeft, FileText, HelpCircle, Plus, Loader2, X, 
-  Banknote, CalendarDays, Search, Image as ImageIcon, Trash2
+  Banknote, CalendarDays, Search, Image as ImageIcon, Trash2, ExternalLink
 } from 'lucide-react';
 import { toBangla, numberToWordsBn } from '../../lib/utils';
 import { useAppContext } from '../../context/AppContext';
@@ -10,6 +10,7 @@ import { supabase } from '../../lib/supabase';
 import { demoDepotExpenses, demoEmployeesList } from '../../lib/demoData';
 import PremiumToast from '../../components/PremiumToast';
 import { ReceiptModal, type ReceiptData } from '../ReceiptModal';
+import { uploadImageToSupabase, uploadPdfToUpstash, getUpstashFileUrl } from '../../lib/upload';
 
 interface Props {
   onBack: () => void;
@@ -21,7 +22,6 @@ export default function DepotExpensePage({ onBack }: Props) {
   const { activeBusiness, user } = useAuth();
 
   const preparedByName = user?.user_metadata?.name || user?.email || 'ইউজার';
-  // preparedByRole বাদ দেওয়া হয়েছে কারণ এটি UI-তে আর সরাসরি ব্যবহার হচ্ছে না
 
   const [toast, setToast] = useState<{ show: boolean, message: string, type: 'success' | 'error' }>({ show: false, message: '', type: 'success' });
   const showToast = (message: string, type: 'success' | 'error' = 'success') => setToast({ show: true, message, type });
@@ -30,8 +30,10 @@ export default function DepotExpensePage({ onBack }: Props) {
   const [employees, setEmployees] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [loadingDocKey, setLoadingDocKey] = useState<string | null>(null);
   
+  const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('month');
   const [isCustomDateOpen, setIsCustomDateOpen] = useState(false);
   const [startDate, setStartDate] = useState('');
@@ -46,11 +48,11 @@ export default function DepotExpensePage({ onBack }: Props) {
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ✅ গ্লোবাল রিসিপ্ট স্টেট
+  // গ্লোবাল রিসিপ্ট স্টেট
   const [isGlobalReceiptOpen, setIsGlobalReceiptOpen] = useState(false);
   const [globalReceiptData, setGlobalReceiptData] = useState<ReceiptData | null>(null);
+  
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
 
   const fetchExpenses = async () => {
     setIsLoading(true);
@@ -62,7 +64,7 @@ export default function DepotExpensePage({ onBack }: Props) {
         if (!activeBusiness?.id) return;
         const [expRes, empRes] = await Promise.all([
           supabase.from('expenses').select('*').eq('business_id', activeBusiness.id).order('date', { ascending: false }),
-          supabase.from('employees').select('*').eq('business_id', activeBusiness.id)
+          supabase.from('employees').select('*').eq('business_id', activeBusiness.id).is('deleted_at', null)
         ]);
 
         if (expRes.data) {
@@ -123,6 +125,23 @@ export default function DepotExpensePage({ onBack }: Props) {
     setIsFormOpen(true);
   };
 
+  // ✅ রিসিপ্ট দেখার ফাংশন
+  const handleViewReceipt = async (fileUrlOrKey: string) => {
+    try {
+      if (fileUrlOrKey.startsWith('http')) {
+        window.open(fileUrlOrKey, '_blank');
+      } else {
+        setLoadingDocKey(fileUrlOrKey);
+        const url = await getUpstashFileUrl(fileUrlOrKey);
+        window.open(url, '_blank');
+        setLoadingDocKey(null);
+      }
+    } catch (error: any) {
+      showToast('রিসিপ্ট দেখতে সমস্যা হয়েছে: ' + error.message, 'error');
+      setLoadingDocKey(null);
+    }
+  };
+
   const handleSaveExpense = async () => {
     if (!formData.expense_type || !formData.amount) return showToast('ক্যাটাগরি এবং পরিমাণ আবশ্যক', 'error');
     setIsSaving(true);
@@ -130,17 +149,20 @@ export default function DepotExpensePage({ onBack }: Props) {
       const amountNum = Number(formData.amount);
       const formattedDate = new Date(formData.date);
       const empName = employees.find(e => e.id === formData.employee_id)?.name || '';
+      
       let uploadedUrl = editingId ? (expenses.find(e => e.id === editingId)?.receipt_url || '') : '';
 
       if (!isDemoMode && activeBusiness?.id) {
         if (receiptFile) {
-          const fileName = `expense-${activeBusiness.id}-${Date.now()}.${receiptFile.name.split('.').pop()}`;
-          const { error: upErr } = await supabase.storage.from('avatars').upload(fileName, receiptFile);
-          if (!upErr) {
-            const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(fileName);
-            uploadedUrl = urlData.publicUrl;
+          // ✅ ছবি বা পিডিএফ চেক করে আপলোড
+          if (receiptFile.type === 'application/pdf') {
+            const { fileKey } = await uploadPdfToUpstash(receiptFile);
+            uploadedUrl = fileKey;
+          } else {
+            uploadedUrl = await uploadImageToSupabase(receiptFile, 'expenses');
           }
         }
+        
         const payload = {
           business_id: activeBusiness.id,
           expense_type: formData.expense_type,
@@ -164,7 +186,7 @@ export default function DepotExpensePage({ onBack }: Props) {
       const newItem = {
         id: editingId || Date.now().toString(),
         expense_type: formData.expense_type, for_whom: formData.for_whom, employee_name: empName, amount: amountNum,
-        note: formData.note, receipt_url: receiptFile ? URL.createObjectURL(receiptFile) : uploadedUrl,
+        note: formData.note, receipt_url: receiptFile ? (receiptFile.type === 'application/pdf' ? 'dummy-pdf-key' : URL.createObjectURL(receiptFile)) : uploadedUrl,
         date: formattedDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }), rawDate: formattedDate.getTime()
       };
       
@@ -208,28 +230,16 @@ export default function DepotExpensePage({ onBack }: Props) {
       driverPhone: 'N/A',
       transportRent: 0,
       items: [{
-        id: '1',
-        name: expense.expense_type,
-        category: 'খরচ',
-        quantity: 1,
-        unit: 'টি',
-        unitPrice: Number(expense.amount),
-        totalPrice: Number(expense.amount)
+        id: '1', name: expense.expense_type, category: 'খরচ',
+        quantity: 1, unit: 'টি', unitPrice: Number(expense.amount), totalPrice: Number(expense.amount)
       }],
-      totalBags: 0,
-      totalPieces: 1,
-      subtotal: Number(expense.amount),
-      discount: 0,
-      grandTotal: Number(expense.amount),
-      paidAmount: Number(expense.amount),
-      dueAmount: 0,
+      totalBags: 0, totalPieces: 1, subtotal: Number(expense.amount),
+      discount: 0, grandTotal: Number(expense.amount),
+      paidAmount: Number(expense.amount), dueAmount: 0,
       paidInWords: numberToWordsBn(Number(expense.amount)),
-      shopDescription: 'ডিপো খরচের রিসিপ্ট',
-      tableNote: '',
-      footerText1: 'ধন্যবাদ!',
-      footerText2: 'Powered by Hishabpati',
-      note: expense.note || '',
-      type: 'expense' // ✅ নতুন ফিল্ড
+      shopDescription: 'ডিপো খরচের রিসিপ্ট', tableNote: '',
+      footerText1: 'ধন্যবাদ!', footerText2: 'Powered by Hishabpati',
+      note: expense.note || '', type: 'expense'
     };
 
     setGlobalReceiptData(receipt);
@@ -241,7 +251,7 @@ export default function DepotExpensePage({ onBack }: Props) {
     setIsDeleting(true);
     try {
       if (!isDemoMode && activeBusiness?.id) {
-        const { error } = await supabase.from('expenses').delete().eq('id', deleteConfirmId);
+        const { error } = await supabase.from('expenses').update({ deleted_at: new Date().toISOString() }).eq('id', deleteConfirmId);
         if (error) throw error;
       }
       setExpenses(prev => prev.filter(e => e.id !== deleteConfirmId));
@@ -298,7 +308,6 @@ export default function DepotExpensePage({ onBack }: Props) {
         ) : filteredList.length > 0 ? (
           <div className="flex flex-col gap-1.5 mt-1">
             {filteredList.map((item) => (
-              // ✅ এখানে setSelectedExpense বাদ দেওয়া হয়েছে
               <div key={item.id} onClick={() => handleOpenGlobalReceipt(item)} className="bg-white rounded-xl p-2.5 border border-da-cardBorder shadow-sm flex flex-col gap-1.5 cursor-pointer active:scale-[0.98] transition-transform">
                 <div className="flex justify-between items-start">
                   <div className="flex items-center gap-2 min-w-0">
@@ -308,8 +317,21 @@ export default function DepotExpensePage({ onBack }: Props) {
                       <p className="text-[10px] text-da-textMuted mt-0.5">{item.date} • {item.note || 'নোট নেই'}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 shrink-0 pl-2">
+                  <div className="flex items-center gap-1.5 shrink-0 pl-2">
                     <p className="font-black text-[14px] text-da-red">৳{toBangla(item.amount)}</p>
+                    
+                    {/* ✅ রিসিপ্ট দেখার বাটন */}
+                    {item.receipt_url && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleViewReceipt(item.receipt_url); }}
+                        disabled={loadingDocKey === item.receipt_url}
+                        className="p-1 text-da-depotBlue hover:text-da-green active:scale-90 transition"
+                        title="রিসিপ্ট দেখুন"
+                      >
+                        {loadingDocKey === item.receipt_url ? <Loader2 size={14} className="animate-spin" /> : <ExternalLink size={14} />}
+                      </button>
+                    )}
+
                     <button
                       onClick={(e) => { e.stopPropagation(); setDeleteConfirmId(item.id); }}
                       className="p-1 text-da-textMuted hover:text-da-red active:scale-90 transition"
@@ -359,9 +381,9 @@ export default function DepotExpensePage({ onBack }: Props) {
               <div>
                 <label className="text-[11px] font-bold text-da-textMuted mb-1 block">ক্যাটাগরি <span className="text-da-red">*</span></label>
                 <select value={formData.expense_type} onChange={e => setFormData({...formData, expense_type: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2.5 text-sm outline-none focus:border-da-depotBlue">
-                  <option>সাধারণ</option><option>গোডাউন ভাড়া</option><option>ম্যানেজার বেতন</option>
+                  <option>সাধারণ</option><option>গোডাউন ভাড়া</option><option>ম্যানেজার বেতন</option>
                   <option>পরিবহন খরচ</option><option>বিদ্যুৎ বিল</option><option>অন্যান্য</option>
-                  {formData.expense_type && !['সাধারণ','গোডাউন ভাড়া','ম্যানেজার বেতন','পরিবহন খরচ','বিদ্যুৎ বিল','অন্যান্য'].includes(formData.expense_type) && <option>{formData.expense_type}</option>}
+                  {formData.expense_type && !['সাধারণ','গোডাউন ভাড়া','ম্যানেজার বেতন','পরিবহন খরচ','বিদ্যুৎ বিল','অন্যান্য'].includes(formData.expense_type) && <option>{formData.expense_type}</option>}
                 </select>
               </div>
 
@@ -387,9 +409,9 @@ export default function DepotExpensePage({ onBack }: Props) {
               <div>
                 <button onClick={() => fileInputRef.current?.click()} className="w-full border border-dashed border-da-cardBorder rounded-lg p-2 flex items-center justify-center gap-2 text-da-textMuted hover:bg-da-depotBg transition">
                   <ImageIcon size={16} className={receiptFile ? 'text-da-green' : ''} />
-                  <span className="text-[11px] font-bold truncate max-w-[200px]">{receiptFile ? receiptFile.name : 'রিসিপ্টের ছবি আপলোড করুন'}</span>
+                  <span className="text-[11px] font-bold truncate max-w-[200px]">{receiptFile ? receiptFile.name : 'রিসিপ্টের ছবি বা PDF আপলোড করুন'}</span>
                 </button>
-                <input type="file" ref={fileInputRef} onChange={e => setReceiptFile(e.target.files?.[0] || null)} accept="image/*" className="hidden" />
+                <input type="file" ref={fileInputRef} onChange={e => setReceiptFile(e.target.files?.[0] || null)} accept="image/*,.pdf" className="hidden" />
               </div>
             </div>
 
@@ -430,7 +452,7 @@ export default function DepotExpensePage({ onBack }: Props) {
                 <Trash2 size={26} className="text-da-red" />
               </div>
               <h3 className="font-bold text-base text-da-textDark mb-1">খরচ ডিলিট করবেন?</h3>
-              <p className="text-xs text-da-textMuted">এই খরচটি স্থায়ীভাবে মুছে যাবে। এটি ফিরিয়ে আনা যাবে না।</p>
+              <p className="text-xs text-da-textMuted">এই খরচটি রিসাইকেল বিনে জমা হবে। সেখান থেকে যেকোনো সময় ফিরিয়ে আনা যাবে।</p>
             </div>
             <div className="p-3 border-t border-da-cardBorder bg-da-depotBg flex gap-2">
               <button onClick={() => setDeleteConfirmId(null)} disabled={isDeleting} className="flex-1 bg-white border border-da-cardBorder text-da-textMuted py-2 rounded-xl font-bold">বাতিল</button>
@@ -442,7 +464,6 @@ export default function DepotExpensePage({ onBack }: Props) {
         </div>
       )}
 
-      {/* ✅ গ্লোবাল রিসিপ্ট মডাল */}
       <ReceiptModal 
         isOpen={isGlobalReceiptOpen} 
         onClose={() => setIsGlobalReceiptOpen(false)} 

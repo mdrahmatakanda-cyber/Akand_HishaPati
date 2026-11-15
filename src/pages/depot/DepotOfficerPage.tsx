@@ -5,13 +5,15 @@ import {
   ReceiptText, Clock, CheckCircle2, AlertTriangle, 
   Image as ImageIcon, FileText, Truck, Edit3,
   Map, Table, Users, Shield, Trash2,
-  ChevronDown, CheckSquare, Square, Navigation, UserPlus
+  ChevronDown, CheckSquare, Square, Navigation, UserPlus, ExternalLink
 } from 'lucide-react';
 import { toBangla } from '../../lib/utils';
 import { useAppContext } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { demoOfficers } from '../../lib/demoData';
+import { uploadImageToSupabase, uploadPdfToUpstash, getUpstashFileUrl } from '../../lib/upload';
+import PremiumToast from '../../components/PremiumToast';
 
 interface Props {
   onBack: () => void;
@@ -34,6 +36,7 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All Status');
+  const [loadingDocKey, setLoadingDocKey] = useState<string | null>(null);
   
   const [selectedOfficer, setSelectedOfficer] = useState<any>(null);
   const [activeTab, setActiveTab] = useState<'table' | 'map'>('table');
@@ -45,10 +48,10 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
   const [isVanLoadModalOpen, setIsVanLoadModalOpen] = useState(false);
   const [isCashModalOpen, setIsCashModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false); // ✅ নতুন স্টেট
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false); // ✅ নতুন স্টেট
+  const [isDeleting, setIsDeleting] = useState(false);
   
   // রোল স্টেট
   const [rolesList, setRolesList] = useState<any[]>([]);
@@ -57,7 +60,7 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
 
   // অফিসার ফর্ম স্টেট
   const [newOfficer, setNewOfficer] = useState({ 
-    name: '', phone: '', password: '', area: '', target_amount: '', commission_rate: '', 
+    name: '', phone: '', phone_2: '', password: '', area: '', target_amount: '', commission_rate: '', 
     status: 'Active', commission_type: 'Officer Commission', role: 'Default Officer', 
     isAdvanced: false, company_access: 'All Companies', market_access: 'All Markets'
   });
@@ -73,13 +76,14 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
   const [officerDoc, setOfficerDoc] = useState<File | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const docInputRef = useRef<HTMLInputElement>(null);
+
+  const [editOfficerImage, setEditOfficerImage] = useState<File | null>(null);
+  const [editOfficerDoc, setEditOfficerDoc] = useState<File | null>(null);
+  const editImageInputRef = useRef<HTMLInputElement>(null);
+  const editDocInputRef = useRef<HTMLInputElement>(null);
   
   const [toast, setToast] = useState<{ show: boolean, message: string, type: 'success' | 'error' }>({ show: false, message: '', type: 'success' });
-
-  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
-    setToast({ show: true, message, type });
-    setTimeout(() => setToast({ show: false, message: '', type: 'success' }), 3000);
-  };
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => setToast({ show: true, message, type });
 
   const fetchOfficers = async () => {
     setIsLoading(true);
@@ -89,30 +93,25 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
       } else {
         if (!activeBusiness?.id) return;
         
-        // ✅ অফিসার লোড (ডিলিট হওয়া বাদ দিয়ে)
         const { data: empData, error: empError } = await supabase
           .from('employees')
           .select('*')
           .eq('business_id', activeBusiness.id)
-          .is('deleted_at', null) // সফট ডিলিট ফিল্টার
+          .is('deleted_at', null)
           .order('created_at', { ascending: false });
         
         if (empError) throw empError;
         setOfficers(empData || []);
 
-        // রোল লোড
         const { data: roleData, error: roleError } = await supabase
           .from('officer_roles')
           .select('*')
           .eq('business_id', activeBusiness.id);
 
-        if (!roleError && roleData) {
-          setRolesList(roleData);
-        }
+        if (!roleError && roleData) setRolesList(roleData);
       }
     } catch (error: any) {
-      console.error(error);
-      showToast('ডাটা লোড করতে সমস্যা হয়েছে', 'error');
+      showToast('ডাটা লোড করতে সমস্যা হয়েছে', 'error');
     } finally {
       setIsLoading(false);
     }
@@ -133,6 +132,22 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
   const totalVanStock = officers.reduce((acc, curr) => acc + Number(curr.van_stock_value || 0), 0);
   const totalCash = officers.reduce((acc, curr) => acc + Number(curr.cash_in_hand || 0), 0);
 
+  const handleViewDocument = async (fileKey: string) => {
+    try {
+      if (fileKey.startsWith('http')) {
+        window.open(fileKey, '_blank');
+      } else {
+        setLoadingDocKey(fileKey);
+        const url = await getUpstashFileUrl(fileKey);
+        window.open(url, '_blank');
+        setLoadingDocKey(null);
+      }
+    } catch (error: any) {
+      showToast('ফাইল দেখতে সমস্যা হয়েছে: ' + error.message, 'error');
+      setLoadingDocKey(null);
+    }
+  };
+
   const handlePermissionChange = (feature: string, type: string) => {
     setPermissions(prev => ({
       ...prev,
@@ -149,17 +164,14 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
       } else {
         if (!activeBusiness?.id) return;
         const { error } = await supabase.from('officer_roles').insert([{
-          business_id: activeBusiness.id,
-          name: roleName,
-          permissions
+          business_id: activeBusiness.id, name: roleName, permissions
         }]);
         if (error) throw error;
         await fetchOfficers();
       }
       setIsRoleModalOpen(false);
-      setRoleName('');
-      setPermissions({});
-      showToast('নতুন রোল তৈরি হয়েছে!');
+      setRoleName(''); setPermissions({});
+      showToast('নতুন রোল তৈরি হয়েছে!');
     } catch (error: any) {
       showToast(error.message, 'error');
     } finally {
@@ -172,49 +184,26 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
     setIsSaving(true);
     try {
       let imageUrl = '';
-      let docUrl = '';
+      let docKey = '';
 
-      // ফাইল আপলোড (রিয়েল মোডে)
       if (!isDemoMode && activeBusiness?.id) {
-        if (officerImage) {
-          const fileExt = officerImage.name.split('.').pop();
-          const fileName = `officer-${Date.now()}.${fileExt}`;
-          const { error: uploadError } = await supabase.storage.from('avatars').upload(fileName, officerImage);
-          if (!uploadError) {
-            const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(fileName);
-            imageUrl = urlData.publicUrl;
-          }
-        }
-        if (officerDoc) {
-          const fileExt = officerDoc.name.split('.').pop();
-          const fileName = `doc-${Date.now()}.${fileExt}`;
-          const { error: uploadError } = await supabase.storage.from('avatars').upload(fileName, officerDoc);
-          if (!uploadError) {
-            const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(fileName);
-            docUrl = urlData.publicUrl;
-          }
-        }
-      }
-
-      if (isDemoMode) {
-        const newO = {
-          id: Date.now().toString(),
-          ...newOfficer,
-          target_amount: Number(newOfficer.target_amount) || 0,
-          commission_rate: Number(newOfficer.commission_rate) || 0,
-          van_stock_value: 0,
-          cash_in_hand: 0,
-          image_url: officerImage ? URL.createObjectURL(officerImage) : '',
-          documents: officerDoc ? [officerDoc.name] : []
-        };
-        setOfficers([newO, ...officers]);
-      } else {
-        if (!activeBusiness?.id) return;
+        if (officerImage) imageUrl = await uploadImageToSupabase(officerImage, 'officers');
         
+        if (officerDoc) {
+          if (officerDoc.type === 'application/pdf') {
+            const { fileKey } = await uploadPdfToUpstash(officerDoc);
+            docKey = fileKey;
+          } else {
+            const imgUrl = await uploadImageToSupabase(officerDoc, 'officer_docs');
+            imageUrl = imgUrl;
+          }
+        }
+
         const { error } = await supabase.from('employees').insert([{
           business_id: activeBusiness.id,
           name: newOfficer.name,
           phone: newOfficer.phone,
+          phone_2: newOfficer.phone_2,
           role: newOfficer.role === 'Default Officer' ? 'sr' : 'sr',
           area: newOfficer.area,
           target_amount: Number(newOfficer.target_amount) || 0,
@@ -224,19 +213,28 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
           van_stock_value: 0,
           cash_in_hand: 0,
           image_url: imageUrl,
-          documents: docUrl ? [docUrl] : [],
+          documents: docKey ? [docKey] : [],
           company_access: newOfficer.company_access,
           market_access: newOfficer.market_access,
           is_advanced: newOfficer.isAdvanced
         }]);
         if (error) throw error;
         await fetchOfficers();
+      } else {
+        const newO = {
+          id: Date.now().toString(), ...newOfficer,
+          target_amount: Number(newOfficer.target_amount) || 0,
+          commission_rate: Number(newOfficer.commission_rate) || 0,
+          van_stock_value: 0, cash_in_hand: 0,
+          image_url: officerImage ? URL.createObjectURL(officerImage) : '',
+          documents: officerDoc ? [officerDoc.name] : []
+        };
+        setOfficers([newO, ...officers]);
       }
       setIsAddModalOpen(false);
-      setNewOfficer({ name: '', phone: '', password: '', area: '', target_amount: '', commission_rate: '', status: 'Active', commission_type: 'Officer Commission', role: 'Default Officer', isAdvanced: false, company_access: 'All Companies', market_access: 'All Markets' });
-      setOfficerImage(null);
-      setOfficerDoc(null);
-      showToast('নতুন অফিসার যোগ হয়েছে!');
+      setNewOfficer({ name: '', phone: '', phone_2: '', password: '', area: '', target_amount: '', commission_rate: '', status: 'Active', commission_type: 'Officer Commission', role: 'Default Officer', isAdvanced: false, company_access: 'All Companies', market_access: 'All Markets' });
+      setOfficerImage(null); setOfficerDoc(null);
+      showToast('নতুন অফিসার যোগ হয়েছে!');
     } catch (error: any) {
       showToast(error.message, 'error');
     } finally {
@@ -249,38 +247,17 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
     setIsSaving(true);
     try {
       const amount = Number(vanLoadAmount);
-      
       if (isDemoMode) {
-        const updated = officers.map(o => 
-          o.id === selectedOfficer.id ? { ...o, van_stock_value: o.van_stock_value + amount } : o
-        );
-        setOfficers(updated);
-        setSelectedOfficer(updated.find(o => o.id === selectedOfficer.id));
+        const updated = officers.map(o => o.id === selectedOfficer.id ? { ...o, van_stock_value: o.van_stock_value + amount } : o);
+        setOfficers(updated); setSelectedOfficer(updated.find(o => o.id === selectedOfficer.id));
       } else {
-        const { error: updateError } = await supabase
-          .from('employees')
-          .update({ van_stock_value: (selectedOfficer.van_stock_value || 0) + amount })
-          .eq('id', selectedOfficer.id);
-        
-        if (updateError) throw updateError;
-
-        await supabase.from('officer_transactions').insert([{
-          business_id: activeBusiness?.id,
-          employee_id: selectedOfficer.id,
-          type: 'van_load',
-          amount: amount,
-          note: 'ভ্যানে মাল লোডিং'
-        }]);
-
+        await supabase.from('employees').update({ van_stock_value: (selectedOfficer.van_stock_value || 0) + amount }).eq('id', selectedOfficer.id);
+        await supabase.from('officer_transactions').insert([{ business_id: activeBusiness?.id, employee_id: selectedOfficer.id, type: 'van_load', amount, note: 'ভ্যানে মাল লোডিং' }]);
         await fetchOfficers(); 
         setSelectedOfficer({ ...selectedOfficer, van_stock_value: (selectedOfficer.van_stock_value || 0) + amount });
       }
-      setIsVanLoadModalOpen(false);
-      setVanLoadAmount('');
-      showToast('ভ্যানে মাল লোড হয়েছে!');
-    } catch (error: any) {
-      showToast(error.message, 'error');
-    } finally { setIsSaving(false); }
+      setIsVanLoadModalOpen(false); setVanLoadAmount(''); showToast('ভ্যানে মাল লোড হয়েছে!');
+    } catch (error: any) { showToast(error.message, 'error'); } finally { setIsSaving(false); }
   };
 
   const handleCashDeposit = async () => {
@@ -288,44 +265,23 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
     setIsSaving(true);
     try {
       const amount = Number(cashDepositAmount);
-      
       if (isDemoMode) {
-        const updated = officers.map(o => 
-          o.id === selectedOfficer.id ? { ...o, cash_in_hand: o.cash_in_hand - amount } : o
-        );
-        setOfficers(updated);
-        setSelectedOfficer(updated.find(o => o.id === selectedOfficer.id));
+        const updated = officers.map(o => o.id === selectedOfficer.id ? { ...o, cash_in_hand: o.cash_in_hand - amount } : o);
+        setOfficers(updated); setSelectedOfficer(updated.find(o => o.id === selectedOfficer.id));
       } else {
-        const { error: updateError } = await supabase
-          .from('employees')
-          .update({ cash_in_hand: (selectedOfficer.cash_in_hand || 0) - amount })
-          .eq('id', selectedOfficer.id);
-        
-        if (updateError) throw updateError;
-
-        await supabase.from('officer_transactions').insert([{
-          business_id: activeBusiness?.id,
-          employee_id: selectedOfficer.id,
-          type: 'cash_deposit',
-          amount: amount,
-          note: 'ক্যাশ জমা'
-        }]);
-
-        await fetchOfficers();
-        setSelectedOfficer({ ...selectedOfficer, cash_in_hand: (selectedOfficer.cash_in_hand || 0) - amount });
+        await supabase.from('employees').update({ cash_in_hand: (selectedOfficer.cash_in_hand || 0) - amount }).eq('id', selectedOfficer.id);
+        await supabase.from('officer_transactions').insert([{ business_id: activeBusiness?.id, employee_id: selectedOfficer.id, type: 'cash_deposit', amount, note: 'ক্যাশ জমা' }]);
+        await fetchOfficers(); setSelectedOfficer({ ...selectedOfficer, cash_in_hand: (selectedOfficer.cash_in_hand || 0) - amount });
       }
-      setIsCashModalOpen(false);
-      setCashDepositAmount('');
-      showToast('ক্যাশ জমা সফল হয়েছে!');
-    } catch (error: any) {
-      showToast(error.message, 'error');
-    } finally { setIsSaving(false); }
+      setIsCashModalOpen(false); setCashDepositAmount(''); showToast('ক্যাশ জমা সফল হয়েছে!');
+    } catch (error: any) { showToast(error.message, 'error'); } finally { setIsSaving(false); }
   };
 
   const openProfileModal = (officer: any, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     setSelectedOfficer(officer);
     setEditOfficerData({ ...officer });
+    setEditOfficerImage(null); setEditOfficerDoc(null);
     setIsEditingProfile(false);
     setIsProfileModalOpen(true);
   };
@@ -334,88 +290,72 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
     if (!editOfficerData.name || !editOfficerData.phone) return showToast('নাম এবং মোবাইল আবশ্যক', 'error');
     setIsSaving(true);
     try {
-      if (isDemoMode) {
-        const updated = officers.map(o => o.id === selectedOfficer.id ? {
-          ...o, ...editOfficerData,
+      let imageUrl = selectedOfficer.image_url || '';
+      let docKey = selectedOfficer.documents?.[0] || '';
+
+      if (!isDemoMode && activeBusiness?.id) {
+        if (editOfficerImage) imageUrl = await uploadImageToSupabase(editOfficerImage, 'officers');
+        
+        if (editOfficerDoc) {
+          if (editOfficerDoc.type === 'application/pdf') {
+            const { fileKey } = await uploadPdfToUpstash(editOfficerDoc);
+            docKey = fileKey;
+          } else {
+            const imgUrl = await uploadImageToSupabase(editOfficerDoc, 'officer_docs');
+            imageUrl = imgUrl;
+          }
+        }
+
+        const { error } = await supabase.from('employees').update({
+          name: editOfficerData.name,
+          phone: editOfficerData.phone,
+          phone_2: editOfficerData.phone_2,
+          area: editOfficerData.area,
           target_amount: Number(editOfficerData.target_amount) || 0,
-          commission_rate: Number(editOfficerData.commission_rate) || 0
-        } : o);
-        setOfficers(updated);
-        setSelectedOfficer(updated.find(o => o.id === selectedOfficer.id));
-      } else {
-        const { error } = await supabase
-          .from('employees')
-          .update({
-            name: editOfficerData.name,
-            phone: editOfficerData.phone,
-            area: editOfficerData.area,
-            target_amount: Number(editOfficerData.target_amount) || 0,
-            commission_rate: Number(editOfficerData.commission_rate) || 0,
-          })
-          .eq('id', selectedOfficer.id);
+          commission_rate: Number(editOfficerData.commission_rate) || 0,
+          image_url: imageUrl,
+          documents: docKey ? [docKey] : []
+        }).eq('id', selectedOfficer.id);
           
         if (error) throw error;
         await fetchOfficers();
-        setSelectedOfficer({ ...selectedOfficer, ...editOfficerData });
+        setSelectedOfficer({ ...selectedOfficer, ...editOfficerData, image_url: imageUrl, documents: docKey ? [docKey] : [] });
+      } else {
+        const updated = officers.map(o => o.id === selectedOfficer.id ? {
+          ...o, ...editOfficerData,
+          target_amount: Number(editOfficerData.target_amount) || 0,
+          commission_rate: Number(editOfficerData.commission_rate) || 0,
+          image_url: editOfficerImage ? URL.createObjectURL(editOfficerImage) : o.image_url,
+          documents: editOfficerDoc ? [editOfficerDoc.name] : o.documents
+        } : o);
+        setOfficers(updated); setSelectedOfficer(updated.find(o => o.id === selectedOfficer.id));
       }
       setIsEditingProfile(false);
-      showToast('অফিসারের তথ্য আপডেট হয়েছে!');
-    } catch (error: any) {
-      showToast(error.message, 'error');
-    } finally { setIsSaving(false); }
+      showToast('অফিসারের তথ্য আপডেট হয়েছে!');
+    } catch (error: any) { showToast(error.message, 'error'); } finally { setIsSaving(false); }
   };
 
-  // ✅ নতুন: অফিসার ডিলিট করার ফাংশন (Cascade Soft Delete)
   const handleDeleteOfficer = async () => {
     if (!selectedOfficer) return;
     setIsDeleting(true);
     try {
       const now = new Date().toISOString();
-      
       if (isDemoMode) {
         setOfficers(prev => prev.filter(o => o.id !== selectedOfficer.id));
       } else {
-        // ১. অফিসারের সব লেনদেন সফট-ডিলিট করুন
-        const { error: transError } = await supabase
-          .from('officer_transactions')
-          .update({ deleted_at: now })
-          .eq('employee_id', selectedOfficer.id);
-          
-        if (transError) throw transError;
-
-        // ২. অফিসার প্রোফাইল সফট-ডিলিট করুন
-        const { error: empError } = await supabase
-          .from('employees')
-          .update({ deleted_at: now })
-          .eq('id', selectedOfficer.id);
-          
-        if (empError) throw empError;
-        
+        await supabase.from('officer_transactions').update({ deleted_at: now }).eq('employee_id', selectedOfficer.id);
+        await supabase.from('employees').update({ deleted_at: now }).eq('id', selectedOfficer.id);
         await fetchOfficers();
       }
-      
-      setIsDeleteModalOpen(false);
-      setIsProfileModalOpen(false);
-      setSelectedOfficer(null);
-      showToast('অফিসার এবং তার লেনদেনসমূহ রিসাইকেল বিনে সরানো হয়েছে!');
-    } catch (error: any) {
-      showToast('ডিলিট করতে সমস্যা: ' + error.message, 'error');
-    } finally {
-      setIsDeleting(false);
-    }
+      setIsDeleteModalOpen(false); setIsProfileModalOpen(false); setSelectedOfficer(null);
+      showToast('অফিসার এবং তার লেনদেনসমূহ রিসাইকেল বিনে সরানো হয়েছে!');
+    } catch (error: any) { showToast('ডিলিট করতে সমস্যা: ' + error.message, 'error'); } finally { setIsDeleting(false); }
   };
 
   return (
     <div className="h-[100dvh] bg-da-depotBg text-da-textDark font-serif flex flex-col overflow-hidden w-full relative">
       
-      {toast.show && (
-        <div className={`fixed top-12 left-1/2 -translate-x-1/2 z-[999] w-[280px] px-5 py-4 rounded-2xl shadow-2xl flex flex-col items-center justify-center gap-2 animate-in slide-in-from-top-8 fade-in duration-300 border border-white/20 ${toast.type === 'success' ? 'bg-da-greenDeep' : 'bg-da-red'} text-white`}>
-          <div className="w-10 h-10 bg-white/15 rounded-full flex items-center justify-center shadow-inner">
-            {toast.type === 'success' ? <CheckCircle2 size={24} /> : <AlertTriangle size={24} />}
-          </div>
-          <span className="text-sm font-bold text-center leading-snug">{toast.message}</span>
-        </div>
-      )}
+      <PremiumToast show={toast.show} message={toast.message} type={toast.type} onClose={() => setToast({ ...toast, show: false })} />
 
       <header className="bg-da-depotNavy text-white shadow-md shrink-0 z-40">
         <div className="px-3 py-2.5 flex items-center justify-between">
@@ -427,8 +367,7 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
           </div>
           {selectedOfficer && (
             <button onClick={() => openProfileModal(selectedOfficer)} className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 px-2.5 py-1.5 rounded-lg transition active:scale-95">
-              <User size={16} />
-              <span className="text-xs font-bold">প্রোফাইল</span>
+              <User size={16} /><span className="text-xs font-bold">প্রোফাইল</span>
             </button>
           )}
         </div>
@@ -484,14 +423,12 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
                 <div className="bg-white border border-da-cardBorder rounded-lg p-2 flex flex-col gap-1.5 shadow-sm shrink-0">
                   <div className="relative">
                     <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-da-textMuted" />
-                    <input type="text" placeholder="নাম বা ফোন দিয়ে খুঁজুন..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full bg-da-depotBg border border-da-cardBorder rounded-md pl-8 pr-2 py-1.5 text-xs outline-none focus:border-da-depotBlue" />
+                    <input type="text" placeholder="নাম বা ফোন দিয়ে খুঁজুন..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full bg-da-depotBg border border-da-cardBorder rounded-md pl-8 pr-2 py-1.5 text-xs outline-none focus:border-da-depotBlue" />
                   </div>
                   <div className="flex gap-1.5">
                     <div className="relative flex-1">
                       <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} className="w-full bg-da-depotBg border border-da-cardBorder rounded-md px-2 py-1.5 text-xs outline-none appearance-none font-bold text-da-textDark">
-                        <option>All Status</option>
-                        <option>Active</option>
-                        <option>Inactive</option>
+                        <option>All Status</option><option>Active</option><option>Inactive</option>
                       </select>
                       <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-da-textMuted" />
                     </div>
@@ -503,7 +440,7 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
                 ) : filteredOfficers.length === 0 ? (
                   <div className="border border-dashed border-da-cardBorder rounded-lg p-6 flex flex-col items-center justify-center text-center bg-white/50 mt-1">
                     <Users size={32} className="text-da-textMuted/50 mb-2" />
-                    <h3 className="font-bold text-da-textDark text-sm">কোনো অফিসার পাওয়া যায়নি</h3>
+                    <h3 className="font-bold text-da-textDark text-sm">কোনো অফিসার পাওয়া যায়নি</h3>
                   </div>
                 ) : (
                   <div className="flex flex-col gap-1.5">
@@ -519,7 +456,7 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
                               <span className={`text-[8px] font-bold px-1 rounded border ${officer.status === 'Active' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'}`}>{officer.status}</span>
                             </div>
                             <p className="text-[10px] text-da-textMuted truncate flex items-center gap-1.5 mt-0.5">
-                              <Phone size={10} /> {officer.phone} | {officer.role}
+                              <Phone size={10} /> {officer.phone} {officer.phone_2 ? ` / ${officer.phone_2}` : ''} | {officer.role}
                             </p>
                           </div>
                         </div>
@@ -558,7 +495,7 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
                 </div>
                 <h2 className="font-black text-lg text-da-textDark group-hover:text-da-depotBlue transition-colors">{selectedOfficer.name}</h2>
               </div>
-              <p className="text-sm text-da-textMuted flex items-center gap-1 mt-1"><Phone size={12}/> {selectedOfficer.phone}</p>
+              <p className="text-sm text-da-textMuted flex items-center gap-1 mt-1"><Phone size={12}/> {selectedOfficer.phone} {selectedOfficer.phone_2 ? ` / ${selectedOfficer.phone_2}` : ''}</p>
               {selectedOfficer.area && <p className="text-xs text-da-textMuted flex items-center gap-1 mt-1"><MapPin size={12}/> {selectedOfficer.area}</p>}
               
               <div className="w-full mt-3 pt-3 border-t border-da-cardBorder grid grid-cols-2 gap-2">
@@ -577,6 +514,19 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
                   </div>
                 )}
               </div>
+
+              {selectedOfficer.documents && selectedOfficer.documents.length > 0 && (
+                <div className="w-full mt-2 bg-da-depotBg px-2 py-1.5 rounded-lg border border-da-cardBorder text-left flex items-start gap-1.5">
+                  <FileText size={14} className="text-da-depotNavy shrink-0 mt-0.5" />
+                  <div className="flex flex-wrap gap-1.5 overflow-x-auto">
+                    {selectedOfficer.documents.map((doc: string, idx: number) => (
+                      <button key={idx} onClick={() => handleViewDocument(doc)} disabled={loadingDocKey === doc} className="text-[10px] font-bold text-da-depotBlue bg-white px-2 py-1 rounded border border-da-cardBorder whitespace-nowrap flex items-center gap-1 active:scale-95 transition">
+                        {loadingDocKey === doc ? <Loader2 size={10} className="animate-spin" /> : <ExternalLink size={10} />} ডকুমেন্ট দেখুন
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="grid grid-cols-3 gap-1.5 shrink-0">
@@ -596,7 +546,7 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
                 <Clock size={16} className="text-da-depotBlue"/> লেনদেনের ইতিহাস
               </h3>
               <div className="flex flex-col items-center py-6">
-                <p className="text-xs text-da-textMuted font-bold">এই অফিসারের কোনো লেনদেন পাওয়া যায়নি।</p>
+                <p className="text-xs text-da-textMuted font-bold">এই অফিসারের কোনো লেনদেন পাওয়া যায়নি।</p>
               </div>
             </div>
           </>
@@ -615,59 +565,23 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
             
             <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-2.5">
               <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[11px] font-bold text-da-textMuted mb-1 block">নাম <span className="text-da-red">*</span></label>
-                  <input type="text" value={newOfficer.name} onChange={e => setNewOfficer({...newOfficer, name: e.target.value})} className="w-full bg-white border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-da-textMuted mb-1 block">ফোন <span className="text-da-red">*</span></label>
-                  <input type="text" value={newOfficer.phone} onChange={e => setNewOfficer({...newOfficer, phone: e.target.value})} className="w-full bg-white border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" />
-                </div>
+                <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">নাম <span className="text-da-red">*</span></label><input type="text" value={newOfficer.name} onChange={e => setNewOfficer({...newOfficer, name: e.target.value})} className="w-full bg-white border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
+                <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">ফোন ১ <span className="text-da-red">*</span></label><input type="tel" inputMode="numeric" value={newOfficer.phone} onChange={e => setNewOfficer({...newOfficer, phone: e.target.value})} className="w-full bg-white border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
               </div>
-              
               <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[11px] font-bold text-da-textMuted mb-1 block">মাসিক টার্গেট</label>
-                  <input type="number" value={newOfficer.target_amount} onChange={e => setNewOfficer({...newOfficer, target_amount: e.target.value})} className="w-full bg-white border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-da-textMuted mb-1 block">স্ট্যাটাস</label>
-                  <select value={newOfficer.status} onChange={e => setNewOfficer({...newOfficer, status: e.target.value})} className="w-full bg-white border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue">
-                    <option>Active</option>
-                    <option>Inactive</option>
-                  </select>
-                </div>
+                <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">ফোন ২</label><input type="tel" inputMode="numeric" value={newOfficer.phone_2} onChange={e => setNewOfficer({...newOfficer, phone_2: e.target.value})} className="w-full bg-white border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
+                <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">মাসিক টার্গেট</label><input type="number" value={newOfficer.target_amount} onChange={e => setNewOfficer({...newOfficer, target_amount: e.target.value})} className="w-full bg-white border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
               </div>
-
               <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[11px] font-bold text-da-textMuted mb-1 block">কমিশন রেট (%)</label>
-                  <input type="number" value={newOfficer.commission_rate} onChange={e => setNewOfficer({...newOfficer, commission_rate: e.target.value})} className="w-full bg-white border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-da-textMuted mb-1 block">কমিশন টাইপ</label>
-                  <select value={newOfficer.commission_type} onChange={e => setNewOfficer({...newOfficer, commission_type: e.target.value})} className="w-full bg-white border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue">
-                    <option>Officer Commission</option>
-                    <option>Fixed</option>
-                  </select>
-                </div>
+                <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">স্ট্যাটাস</label><select value={newOfficer.status} onChange={e => setNewOfficer({...newOfficer, status: e.target.value})} className="w-full bg-white border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue"><option>Active</option><option>Inactive</option></select></div>
+                <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">কমিশন রেট (%)</label><input type="number" value={newOfficer.commission_rate} onChange={e => setNewOfficer({...newOfficer, commission_rate: e.target.value})} className="w-full bg-white border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
               </div>
-
               <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-[11px] font-bold text-da-textMuted mb-1 block">রোল</label>
-                  <select value={newOfficer.role} onChange={e => setNewOfficer({...newOfficer, role: e.target.value})} className="w-full bg-white border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue">
-                    <option>Default Officer</option>
-                    {rolesList.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-da-textMuted mb-1 block">এলাকা / রুট</label>
-                  <input type="text" value={newOfficer.area} onChange={e => setNewOfficer({...newOfficer, area: e.target.value})} className="w-full bg-white border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" />
-                </div>
+                <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">কমিশন টাইপ</label><select value={newOfficer.commission_type} onChange={e => setNewOfficer({...newOfficer, commission_type: e.target.value})} className="w-full bg-white border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue"><option>Officer Commission</option><option>Fixed</option></select></div>
+                <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">রোল</label><select value={newOfficer.role} onChange={e => setNewOfficer({...newOfficer, role: e.target.value})} className="w-full bg-white border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue"><option>Default Officer</option>{rolesList.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}</select></div>
               </div>
+              <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">এলাকা / রুট</label><input type="text" value={newOfficer.area} onChange={e => setNewOfficer({...newOfficer, area: e.target.value})} className="w-full bg-white border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
 
-              {/* অ্যাডভান্সড অপশন */}
               <div className="border border-da-cardBorder rounded-lg p-2 bg-da-depotBg mt-1">
                 <div onClick={() => setNewOfficer({...newOfficer, isAdvanced: !newOfficer.isAdvanced})} className="flex items-center gap-1.5 cursor-pointer select-none">
                   {newOfficer.isAdvanced ? <CheckSquare size={16} className="text-da-depotBlue"/> : <Square size={16} className="text-da-textMuted"/>}
@@ -675,32 +589,18 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
                 </div>
                 {newOfficer.isAdvanced && (
                   <div className="mt-2 flex flex-col gap-2 animate-in slide-in-from-top-1 duration-200">
-                    <div>
-                      <label className="text-[10px] font-bold text-da-textDark mb-1 block">কোম্পানি অ্যাক্সেস</label>
-                      <select value={newOfficer.company_access} onChange={e => setNewOfficer({...newOfficer, company_access: e.target.value})} className="w-full bg-white border border-da-depotBlue/30 rounded-lg px-2 py-1.5 text-[11px] font-bold text-da-depotBlue outline-none">
-                        <option>All Companies</option>
-                        <option>Specific Companies</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-da-textDark mb-1 block">রোড ও মার্কেট</label>
-                      <select value={newOfficer.market_access} onChange={e => setNewOfficer({...newOfficer, market_access: e.target.value})} className="w-full bg-white border border-da-depotBlue/30 rounded-lg px-2 py-1.5 text-[11px] font-bold text-da-depotBlue outline-none">
-                        <option>All Markets</option>
-                        <option>Specific Markets</option>
-                      </select>
-                    </div>
+                    <div><label className="text-[10px] font-bold text-da-textDark mb-1 block">কোম্পানি অ্যাক্সেস</label><select value={newOfficer.company_access} onChange={e => setNewOfficer({...newOfficer, company_access: e.target.value})} className="w-full bg-white border border-da-depotBlue/30 rounded-lg px-2 py-1.5 text-[11px] font-bold text-da-depotBlue outline-none"><option>All Companies</option><option>Specific Companies</option></select></div>
+                    <div><label className="text-[10px] font-bold text-da-textDark mb-1 block">রোড ও মার্কেট</label><select value={newOfficer.market_access} onChange={e => setNewOfficer({...newOfficer, market_access: e.target.value})} className="w-full bg-white border border-da-depotBlue/30 rounded-lg px-2 py-1.5 text-[11px] font-bold text-da-depotBlue outline-none"><option>All Markets</option><option>Specific Markets</option></select></div>
                   </div>
                 )}
               </div>
 
-              {/* আপলোড অপশন */}
               <div className="grid grid-cols-2 gap-2 mt-1">
                 <button onClick={() => imageInputRef.current?.click()} className="border border-dashed border-da-cardBorder rounded-lg p-2 flex flex-col items-center justify-center text-da-textMuted hover:bg-da-depotBg transition">
                   <ImageIcon size={18} className={officerImage ? 'text-da-green' : ''} />
                   <span className="text-[10px] font-bold mt-1 truncate w-full text-center">{officerImage ? officerImage.name : 'অফিসারের ছবি'}</span>
                 </button>
                 <input type="file" ref={imageInputRef} onChange={e => setOfficerImage(e.target.files?.[0] || null)} accept="image/*" className="hidden" />
-
                 <button onClick={() => docInputRef.current?.click()} className="border border-dashed border-da-cardBorder rounded-lg p-2 flex flex-col items-center justify-center text-da-textMuted hover:bg-da-depotBg transition">
                   <FileText size={18} className={officerDoc ? 'text-da-green' : ''} />
                   <span className="text-[10px] font-bold mt-1 truncate w-full text-center">{officerDoc ? officerDoc.name : 'ডকুমেন্ট (PDF)'}</span>
@@ -711,8 +611,150 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
 
             <div className="p-2.5 bg-da-depotBg border-t border-da-cardBorder flex gap-2 shrink-0">
               <button onClick={() => setIsAddModalOpen(false)} className="flex-1 bg-white border border-da-cardBorder text-da-textMuted py-2 rounded-lg font-bold text-xs">বাতিল</button>
-              <button onClick={handleAddOfficer} disabled={isSaving} className="flex-1 bg-da-depotBlue text-white py-2 rounded-lg font-bold text-xs shadow-md flex justify-center items-center">
-                {isSaving ? <Loader2 size={16} className="animate-spin"/> : 'সেভ করুন'}
+              <button onClick={handleAddOfficer} disabled={isSaving} className="flex-1 bg-da-depotBlue text-white py-2 rounded-lg font-bold text-xs shadow-md flex justify-center items-center">{isSaving ? <Loader2 size={16} className="animate-spin"/> : 'সেভ করুন'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Profile Modal (View & Edit & Delete) */}
+      {isProfileModalOpen && selectedOfficer && (
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90dvh] flex flex-col">
+            <div className="bg-da-depotNavy p-3 flex justify-between items-center text-white shrink-0">
+              <h2 className="font-bold text-sm flex items-center gap-2"><User size={16}/> অফিসার প্রোফাইল</h2>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setIsDeleteModalOpen(true)} className="flex items-center gap-1 bg-red-500 hover:bg-red-600 px-2 py-1 rounded text-xs font-bold transition">
+                  <Trash2 size={12}/> ডিলিট
+                </button>
+                {!isEditingProfile ? (
+                  <button onClick={() => setIsEditingProfile(true)} className="flex items-center gap-1 bg-white/20 hover:bg-white/30 px-2 py-1 rounded text-xs font-bold transition">
+                    <Edit3 size={12}/> এডিট
+                  </button>
+                ) : (
+                  <button onClick={() => setIsEditingProfile(false)} className="flex items-center gap-1 bg-white/20 hover:bg-white/30 px-2 py-1 rounded text-xs font-bold transition">
+                    <X size={12}/> বাতিল
+                  </button>
+                )}
+                <button onClick={() => setIsProfileModalOpen(false)} className="p-1 bg-white/20 rounded-full"><X size={16}/></button>
+              </div>
+            </div>
+            
+            <div className="p-5 flex flex-col items-center overflow-y-auto">
+              
+              <div onClick={() => isEditingProfile && editImageInputRef.current?.click()} className="w-24 h-24 bg-da-depotBg rounded-full flex items-center justify-center text-da-depotBlue mb-3 border-4 border-da-depotNavy/10 overflow-hidden shadow-inner relative group cursor-pointer">
+                {editOfficerImage ? <img src={URL.createObjectURL(editOfficerImage)} alt="" className="w-full h-full object-cover" /> : selectedOfficer.image_url ? <img src={selectedOfficer.image_url} alt={selectedOfficer.name} className="w-full h-full object-cover" /> : <User size={48} />}
+                {isEditingProfile && <div className="absolute inset-0 bg-black/40 flex items-center justify-center"><ImageIcon size={24} className="text-white" /></div>}
+              </div>
+              <input type="file" ref={editImageInputRef} onChange={e => setEditOfficerImage(e.target.files?.[0] || null)} accept="image/*" className="hidden" />
+
+              {!isEditingProfile ? (
+                <>
+                  <h2 className="font-black text-xl text-da-textDark">{selectedOfficer.name}</h2>
+                  <div className="w-full mt-5 flex flex-col gap-3">
+                    <div className="flex items-center gap-3 bg-da-depotBg p-3 rounded-lg border border-da-cardBorder">
+                      <Phone className="text-da-depotNavy" size={18} />
+                      <div>
+                        <p className="text-[10px] text-da-textMuted font-bold">মোবাইল নম্বর</p>
+                        <p className="text-sm font-bold text-da-textDark">{selectedOfficer.phone} {selectedOfficer.phone_2 ? ` / ${selectedOfficer.phone_2}` : ''}</p>
+                      </div>
+                    </div>
+                    {selectedOfficer.area && (
+                      <div className="flex items-center gap-3 bg-da-depotBg p-3 rounded-lg border border-da-cardBorder">
+                        <MapPin className="text-da-depotNavy" size={18} />
+                        <div>
+                          <p className="text-[10px] text-da-textMuted font-bold">এলাকা / রুট</p>
+                          <p className="text-sm font-bold text-da-textDark">{selectedOfficer.area}</p>
+                        </div>
+                      </div>
+                    )}
+                    
+                    <div className="bg-da-depotBg p-3 rounded-lg border border-da-cardBorder flex flex-col gap-1.5">
+                      <div className="flex justify-between items-center text-[11px] font-bold"><span className="text-da-textMuted">রোল:</span><span className="text-da-textDark">{selectedOfficer.role}</span></div>
+                      <div className="flex justify-between items-center text-[11px] font-bold"><span className="text-da-textMuted">স্ট্যাটাস:</span><span className={selectedOfficer.status === 'Active' ? 'text-green-600' : 'text-red-600'}>{selectedOfficer.status}</span></div>
+                      {selectedOfficer.target_amount > 0 && (
+                        <>
+                          <div className="flex justify-between items-center text-[11px] font-bold"><span className="text-da-textMuted">টার্গেট:</span><span className="text-da-depotBlue">৳{toBangla(selectedOfficer.target_amount)}</span></div>
+                          <div className="flex justify-between items-center text-[11px] font-bold"><span className="text-da-textMuted">কমিশন:</span><span className="text-da-green">{toBangla(selectedOfficer.commission_rate)}% ({selectedOfficer.commission_type})</span></div>
+                        </>
+                      )}
+                    </div>
+
+                    <div className="bg-da-depotBg p-3 rounded-lg border border-da-cardBorder">
+                      <p className="text-[10px] text-da-textMuted font-bold mb-2 flex items-center gap-1"><FileText size={12}/> সংযুক্ত ডকুমেন্টস</p>
+                      {selectedOfficer.documents && selectedOfficer.documents.length > 0 ? (
+                        <div className="flex flex-col gap-1.5">
+                          {selectedOfficer.documents.map((doc: string, idx: number) => (
+                            <button key={idx} onClick={() => handleViewDocument(doc)} disabled={loadingDocKey === doc} className="flex items-center justify-between bg-white px-2 py-1.5 rounded border border-gray-200 active:scale-95 transition">
+                              <span className="text-xs font-bold text-da-depotBlue truncate flex items-center gap-1">
+                                {loadingDocKey === doc ? <Loader2 size={10} className="animate-spin" /> : <ExternalLink size={10} />} ডকুমেন্ট দেখুন
+                              </span>
+                              <span className="text-[10px] text-gray-400">PDF</span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-gray-400 italic">কোনো ডকুমেন্ট আপলোড করা হয়নি।</p>
+                      )}
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="w-full mt-2 flex flex-col gap-3">
+                  <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">অফিসারের নাম</label><input type="text" value={editOfficerData.name || ''} onChange={e => setEditOfficerData({...editOfficerData, name: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">ফোন ১</label><input type="tel" inputMode="numeric" value={editOfficerData.phone || ''} onChange={e => setEditOfficerData({...editOfficerData, phone: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
+                    <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">ফোন ২</label><input type="tel" inputMode="numeric" value={editOfficerData.phone_2 || ''} onChange={e => setEditOfficerData({...editOfficerData, phone_2: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">এলাকা / রুট</label><input type="text" value={editOfficerData.area || ''} onChange={e => setEditOfficerData({...editOfficerData, area: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
+                    <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">মাসিক টার্গেট</label><input type="number" value={editOfficerData.target_amount || ''} onChange={e => setEditOfficerData({...editOfficerData, target_amount: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
+                  </div>
+                  <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">কমিশন (%)</label><input type="number" value={editOfficerData.commission_rate || ''} onChange={e => setEditOfficerData({...editOfficerData, commission_rate: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
+
+                  <div className="grid grid-cols-2 gap-2 mt-1">
+                    <button onClick={() => editImageInputRef.current?.click()} className="border border-dashed border-da-cardBorder rounded-lg p-2 flex flex-col items-center justify-center text-da-textMuted hover:bg-da-depotBg transition">
+                      <ImageIcon size={18} className={editOfficerImage ? 'text-da-green' : ''} />
+                      <span className="text-[10px] font-bold mt-1 truncate w-full text-center">{editOfficerImage ? editOfficerImage.name : 'ছবি পরিবর্তন করুন'}</span>
+                    </button>
+                    <button onClick={() => editDocInputRef.current?.click()} className="border border-dashed border-da-cardBorder rounded-lg p-2 flex flex-col items-center justify-center text-da-textMuted hover:bg-da-depotBg transition">
+                      <FileText size={18} className={editOfficerDoc ? 'text-da-green' : ''} />
+                      <span className="text-[10px] font-bold mt-1 truncate w-full text-center">{editOfficerDoc ? editOfficerDoc.name : 'ডকুমেন্ট পরিবর্তন করুন'}</span>
+                    </button>
+                    <input type="file" ref={editDocInputRef} onChange={e => setEditOfficerDoc(e.target.files?.[0] || null)} accept=".pdf,image/*" className="hidden" />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-3 border-t border-da-cardBorder bg-da-depotBg flex gap-2 shrink-0">
+              {isEditingProfile ? (
+                <button onClick={handleUpdateOfficer} disabled={isSaving} className="w-full bg-da-green text-white py-2.5 rounded-xl font-bold shadow-md flex justify-center items-center gap-2">
+                  {isSaving ? <Loader2 size={16} className="animate-spin"/> : <><CheckCircle2 size={16}/> সেভ করুন</>}
+                </button>
+              ) : (
+                <button onClick={() => setIsProfileModalOpen(false)} className="w-full bg-da-depotNavy text-white py-2.5 rounded-xl font-bold shadow-md">বন্ধ করুন</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============ ডিলিট কনফার্মেশন মডাল ============ */}
+      {isDeleteModalOpen && selectedOfficer && (
+        <div className="fixed inset-0 bg-black/70 z-[120] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-xs overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className="p-5 text-center">
+              <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <AlertTriangle size={26} className="text-red-600" />
+              </div>
+              <h3 className="font-bold text-base text-da-textDark mb-1">অফিসার ডিলিট করবেন?</h3>
+              <p className="text-xs text-da-textMuted">"{selectedOfficer.name}" এবং তার সব লেনদেন রিসাইকেল বিনে জমা হবে। সেখান থেকে যেকোনো সময় ফিরিয়ে আনা যাবে।</p>
+            </div>
+            <div className="p-3 border-t border-da-cardBorder bg-da-depotBg flex gap-2">
+              <button onClick={() => setIsDeleteModalOpen(false)} disabled={isDeleting} className="flex-1 bg-white border border-da-cardBorder text-da-textMuted py-2 rounded-xl font-bold disabled:opacity-50">বাতিল</button>
+              <button onClick={handleDeleteOfficer} disabled={isDeleting} className="flex-1 bg-red-500 text-white py-2 rounded-xl font-bold shadow-md flex justify-center items-center gap-1.5 disabled:opacity-60">
+                {isDeleting ? <Loader2 size={14} className="animate-spin"/> : <Trash2 size={14}/>} ডিলিট
               </button>
             </div>
           </div>
@@ -735,7 +777,7 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
               </div>
 
               <div className="bg-da-depotBlue/5 border border-da-depotBlue/20 rounded-lg p-2 text-[10px] text-da-depotBlue leading-relaxed">
-                এই অফিসার রোলের জন্য শুধুমাত্র প্রয়োজনীয় অনুমতিগুলো টেবিল থেকে দিন।
+                এই অফিসার রোলের জন্য শুধুমাত্র প্রয়োজনীয় অনুমতিগুলো টেবিল থেকে দিন।
               </div>
 
               <div className="border border-da-cardBorder rounded-lg overflow-hidden">
@@ -789,7 +831,7 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
             </div>
             <div className="flex-1 overflow-y-auto p-3 flex flex-col gap-1.5">
                {rolesList.length === 0 ? (
-                 <div className="text-center text-da-textMuted mt-10 text-xs font-bold">কোনো রোল তৈরি করা হয়নি</div>
+                 <div className="text-center text-da-textMuted mt-10 text-xs font-bold">কোনো রোল তৈরি করা হয়নি</div>
                ) : (
                  rolesList.map(r => (
                    <div key={r.id} className="bg-white border border-da-cardBorder p-2 rounded-lg shadow-sm flex items-center gap-2">
@@ -854,180 +896,13 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
         </div>
       )}
 
-      {/* Profile Modal (View & Edit & Delete) */}
-      {isProfileModalOpen && selectedOfficer && (
-        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90dvh] flex flex-col">
-            <div className="bg-da-depotNavy p-3 flex justify-between items-center text-white shrink-0">
-              <h2 className="font-bold text-sm flex items-center gap-2"><User size={16}/> অফিসার প্রোফাইল</h2>
-              <div className="flex items-center gap-2">
-                {/* ✅ ডিলিট বাটন যোগ করা হলো */}
-                <button onClick={() => setIsDeleteModalOpen(true)} className="flex items-center gap-1 bg-red-500 hover:bg-red-600 px-2 py-1 rounded text-xs font-bold transition">
-                  <Trash2 size={12}/> ডিলিট
-                </button>
-                
-                {!isEditingProfile ? (
-                  <button onClick={() => setIsEditingProfile(true)} className="flex items-center gap-1 bg-white/20 hover:bg-white/30 px-2 py-1 rounded text-xs font-bold transition">
-                    <Edit3 size={12}/> এডিট
-                  </button>
-                ) : (
-                  <button onClick={() => setIsEditingProfile(false)} className="flex items-center gap-1 bg-white/20 hover:bg-white/30 px-2 py-1 rounded text-xs font-bold transition">
-                    <X size={12}/> বাতিল
-                  </button>
-                )}
-                <button onClick={() => setIsProfileModalOpen(false)} className="p-1 bg-white/20 rounded-full"><X size={16}/></button>
-              </div>
-            </div>
-            
-            <div className="p-5 flex flex-col items-center overflow-y-auto">
-              <div className="w-24 h-24 bg-da-depotBg rounded-full flex items-center justify-center text-da-depotBlue mb-3 border-4 border-da-depotNavy/10 overflow-hidden shadow-inner relative group">
-                {selectedOfficer.image_url ? (
-                  <img src={selectedOfficer.image_url} alt={selectedOfficer.name} className="w-full h-full object-cover" />
-                ) : (
-                  <User size={48} />
-                )}
-                {isEditingProfile && (
-                  <div className="absolute inset-0 bg-black/40 flex items-center justify-center cursor-pointer">
-                    <ImageIcon size={24} className="text-white" />
-                  </div>
-                )}
-              </div>
-
-              {!isEditingProfile ? (
-                <>
-                  <h2 className="font-black text-xl text-da-textDark">{selectedOfficer.name}</h2>
-                  <div className="w-full mt-5 flex flex-col gap-3">
-                    <div className="flex items-center gap-3 bg-da-depotBg p-3 rounded-lg border border-da-cardBorder">
-                      <Phone className="text-da-depotNavy" size={18} />
-                      <div>
-                        <p className="text-[10px] text-da-textMuted font-bold">মোবাইল নম্বর</p>
-                        <p className="text-sm font-bold text-da-textDark">{selectedOfficer.phone}</p>
-                      </div>
-                    </div>
-                    {selectedOfficer.area && (
-                      <div className="flex items-center gap-3 bg-da-depotBg p-3 rounded-lg border border-da-cardBorder">
-                        <MapPin className="text-da-depotNavy" size={18} />
-                        <div>
-                          <p className="text-[10px] text-da-textMuted font-bold">এলাকা / রুট</p>
-                          <p className="text-sm font-bold text-da-textDark">{selectedOfficer.area}</p>
-                        </div>
-                      </div>
-                    )}
-                    
-                    <div className="bg-da-depotBg p-3 rounded-lg border border-da-cardBorder flex flex-col gap-1.5">
-                      <div className="flex justify-between items-center text-[11px] font-bold">
-                        <span className="text-da-textMuted">রোল:</span>
-                        <span className="text-da-textDark">{selectedOfficer.role}</span>
-                      </div>
-                      <div className="flex justify-between items-center text-[11px] font-bold">
-                        <span className="text-da-textMuted">স্ট্যাটাস:</span>
-                        <span className={selectedOfficer.status === 'Active' ? 'text-green-600' : 'text-red-600'}>{selectedOfficer.status}</span>
-                      </div>
-                      {selectedOfficer.target_amount > 0 && (
-                        <>
-                          <div className="flex justify-between items-center text-[11px] font-bold">
-                            <span className="text-da-textMuted">টার্গেট:</span>
-                            <span className="text-da-depotBlue">৳{toBangla(selectedOfficer.target_amount)}</span>
-                          </div>
-                          <div className="flex justify-between items-center text-[11px] font-bold">
-                            <span className="text-da-textMuted">কমিশন:</span>
-                            <span className="text-da-green">{toBangla(selectedOfficer.commission_rate)}% ({selectedOfficer.commission_type})</span>
-                          </div>
-                        </>
-                      )}
-                    </div>
-
-                    <div className="bg-da-depotBg p-3 rounded-lg border border-da-cardBorder">
-                      <p className="text-[10px] text-da-textMuted font-bold mb-2 flex items-center gap-1"><FileText size={12}/> সংযুক্ত ডকুমেন্টস</p>
-                      {selectedOfficer.documents && selectedOfficer.documents.length > 0 ? (
-                        <div className="flex flex-col gap-1.5">
-                          {selectedOfficer.documents.map((doc: string, idx: number) => (
-                            <div key={idx} className="flex items-center justify-between bg-white px-2 py-1.5 rounded border border-gray-200">
-                              <span className="text-xs font-bold text-da-depotBlue truncate">{doc}</span>
-                              <span className="text-[10px] text-gray-400">PDF</span>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-xs text-gray-400 italic">কোনো ডকুমেন্ট আপলোড করা হয়নি।</p>
-                      )}
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <div className="w-full mt-2 flex flex-col gap-3">
-                  <div>
-                    <label className="text-[11px] font-bold text-da-textMuted mb-1 block">অফিসারের নাম</label>
-                    <input type="text" value={editOfficerData.name || ''} onChange={e => setEditOfficerData({...editOfficerData, name: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[11px] font-bold text-da-textMuted mb-1 block">ফোন নম্বর</label>
-                      <input type="tel" value={editOfficerData.phone || ''} onChange={e => setEditOfficerData({...editOfficerData, phone: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" />
-                    </div>
-                    <div>
-                      <label className="text-[11px] font-bold text-da-textMuted mb-1 block">এলাকা / রুট</label>
-                      <input type="text" value={editOfficerData.area || ''} onChange={e => setEditOfficerData({...editOfficerData, area: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[11px] font-bold text-da-textMuted mb-1 block">মাসিক টার্গেট</label>
-                      <input type="number" value={editOfficerData.target_amount || ''} onChange={e => setEditOfficerData({...editOfficerData, target_amount: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" />
-                    </div>
-                    <div>
-                      <label className="text-[11px] font-bold text-da-textMuted mb-1 block">কমিশন (%)</label>
-                      <input type="number" value={editOfficerData.commission_rate || ''} onChange={e => setEditOfficerData({...editOfficerData, commission_rate: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" />
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <div className="p-3 border-t border-da-cardBorder bg-da-depotBg flex gap-2 shrink-0">
-              {isEditingProfile ? (
-                <button onClick={handleUpdateOfficer} disabled={isSaving} className="w-full bg-da-green text-white py-2.5 rounded-xl font-bold shadow-md flex justify-center items-center gap-2">
-                  {isSaving ? <Loader2 size={16} className="animate-spin"/> : <><CheckCircle2 size={16}/> সেভ করুন</>}
-                </button>
-              ) : (
-                <button onClick={() => setIsProfileModalOpen(false)} className="w-full bg-da-depotNavy text-white py-2.5 rounded-xl font-bold shadow-md">বন্ধ করুন</button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ============ ডিলিট কনফার্মেশন মডাল ============ */}
-      {isDeleteModalOpen && selectedOfficer && (
-        <div className="fixed inset-0 bg-black/70 z-[120] flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl w-full max-w-xs overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
-            <div className="p-5 text-center">
-              <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                <AlertTriangle size={26} className="text-red-600" />
-              </div>
-              <h3 className="font-bold text-base text-da-textDark mb-1">অফিসার ডিলিট করবেন?</h3>
-              <p className="text-xs text-da-textMuted">"{selectedOfficer.name}" এবং তার সব লেনদেন রিসাইকেল বিনে জমা হবে। সেখান থেকে যেকোনো সময় ফিরিয়ে আনা যাবে।</p>
-            </div>
-            <div className="p-3 border-t border-da-cardBorder bg-da-depotBg flex gap-2">
-              <button onClick={() => setIsDeleteModalOpen(false)} disabled={isDeleting} className="flex-1 bg-white border border-da-cardBorder text-da-textMuted py-2 rounded-xl font-bold disabled:opacity-50">বাতিল</button>
-              <button onClick={handleDeleteOfficer} disabled={isDeleting} className="flex-1 bg-red-500 text-white py-2 rounded-xl font-bold shadow-md flex justify-center items-center gap-1.5 disabled:opacity-60">
-                {isDeleting ? <Loader2 size={14} className="animate-spin"/> : <Trash2 size={14}/>} ডিলিট
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
     </div>
   );
 }
 
 function ToggleSwitch({ checked, onChange }: { checked: boolean, onChange: () => void }) {
   return (
-    <button 
-      onClick={onChange}
-      className={`w-7 h-4 rounded-full relative transition-colors ${checked ? 'bg-da-depotBlue' : 'bg-gray-300'}`}
-    >
+    <button onClick={onChange} className={`w-7 h-4 rounded-full relative transition-colors ${checked ? 'bg-da-depotBlue' : 'bg-gray-300'}`}>
       <div className={`w-3 h-3 bg-white rounded-full absolute top-0.5 transition-all shadow-sm ${checked ? 'left-3.5' : 'left-0.5'}`}></div>
     </button>
   );

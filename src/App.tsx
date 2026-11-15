@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { WifiOff, LogOut, X, AlertTriangle, Loader2 } from 'lucide-react';
+import { WifiOff, LogOut, X, AlertTriangle, Loader2, MessageCircle, Mail } from 'lucide-react';
 import DashboardPage from './pages/DashboardPage';
 import DepotDashboardPage from './pages/depot/DepotDashboardPage';
 import DepotStockPage from './pages/depot/DepotStockPage';
@@ -188,17 +188,46 @@ function AppContent() {
 
   if (!user) return <AuthPage />;
 
-  // ✅ Pending স্ক্রিন (যদি ইউজার অ্যাডমিন দ্বারা অনুমোদিত না হয়)
+  // ✅ Pending স্ক্রিন (ইউজার অ্যাডমিন দ্বারা অনুমোদিত না হলে)
   if (user && userStatus === 'pending') {
+    const userName = user.user_metadata?.name || 'ইউজার';
+    const userPhone = user.user_metadata?.phone || '';
+    const userEmail = user.email || '';
+
+    const whatsappMessage = encodeURIComponent(`আসসালামু আলাইকুম, আমি ${userName} (${userPhone})। আমি Hishabpati অ্যাপে রেজিস্ট্রেশন করেছি। অনুগ্রহ করে আমার অ্যাকাউন্টটি অনুমোদন করুন।`);
+    const emailSubject = encodeURIComponent(`Hishabpati Account Approval Request - ${userName}`);
+    const emailBody = encodeURIComponent(`আসসালামু আলাইকুম,\n\nআমি ${userName} (${userPhone})।\nআমার ইমেইল: ${userEmail}\n\nআমি Hishabpati অ্যাপে রেজিস্ট্রেশন করেছি। অনুগ্রহ করে আমার অ্যাকাউন্টটি অনুমোদন করুন।\n\nধন্যবাদ।`);
+
     return (
       <div className="h-[100dvh] flex flex-col items-center justify-center bg-[#EFF6F3] p-5 text-center">
-        <div className="w-16 h-16 bg-[#0B5C47]/10 text-[#0B5C47] rounded-full flex items-center justify-center mb-4">
-          <AlertTriangle size={32} />
+        <div className="w-20 h-20 bg-[#0B5C47]/10 text-[#0B5C47] rounded-full flex items-center justify-center mb-4">
+          <AlertTriangle size={40} />
         </div>
         <h1 className="text-xl font-bold text-[#0B5C47] mb-2">অনুমোদনের অপেক্ষায়!</h1>
-        <p className="text-gray-600 mb-6 text-sm">আপনার অ্যাকাউন্টটি বর্তমানে অ্যাডমিনের অনুমোদনের জন্য অপেক্ষা করছে। অনুগ্রহ করে অপেক্ষা করুন।</p>
-        <button onClick={signOut} className="bg-red-500 text-white px-8 py-2.5 rounded-xl font-bold shadow-md active:scale-95 transition">
-          লগআউট করুন
+        <p className="text-gray-600 mb-6 text-sm px-4">আপনার অ্যাকাউন্টটি বর্তমানে অ্যাডমিনের অনুমোদনের জন্য অপেক্ষা করছে। দ্রুত অনুমোদন পেতে নিচের বাটনগুলো ব্যবহার করে যোগাযোগ করুন।</p>
+        
+        <div className="flex flex-col gap-3 w-full max-w-xs mb-6">
+          {/* হোয়াটসঅ্যাপ বাটন */}
+          <a 
+            href={`https://wa.me/8801752005057?text=${whatsappMessage}`} 
+            target="_blank" 
+            rel="noopener noreferrer"
+            className="w-full bg-[#25D366] text-white py-3 rounded-xl font-bold shadow-md flex justify-center items-center gap-2 active:scale-95 transition"
+          >
+            <MessageCircle size={18} /> হোয়াটসঅ্যাপে মেসেজ দিন
+          </a>
+
+          {/* ইমেইল বাটন */}
+          <a 
+            href={`mailto:mdrahmatakanda@gmail.com?subject=${emailSubject}&body=${emailBody}`}
+            className="w-full bg-white border-2 border-[#1E88E5] text-[#1E88E5] py-3 rounded-xl font-bold shadow-sm flex justify-center items-center gap-2 active:scale-95 transition"
+          >
+            <Mail size={18} /> ইমেইল করুন
+          </a>
+        </div>
+
+        <button onClick={signOut} className="text-gray-500 font-bold text-sm hover:underline mt-2">
+          অথবা লগআউট করুন
         </button>
       </div>
     );

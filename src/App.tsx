@@ -33,6 +33,7 @@ import SetupBusinessPage from './pages/SetupBusinessPage';
 
 import { AppProvider } from './context/AppContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import InstallPWA from './components/InstallPWA'; // ✅ নতুন কম্পোনেন্ট
 
 export type ScreenKey = 
   | 'dashboard' | 'purchase' | 'sale'
@@ -296,6 +297,10 @@ function AppContent() {
   return (
     <>
       {renderScreen()}
+      
+      {/* ✅ মোবাইলে ইনস্টল ব্যানার */}
+      <InstallPWA />
+
       {showExitModal && (
         <div className="fixed inset-0 bg-black/50 z-[999] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl w-full max-w-xs overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">

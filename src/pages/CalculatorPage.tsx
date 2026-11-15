@@ -16,29 +16,77 @@ export default function CalculatorPage({ onBack }: CalculatorProps) {
       setDisplay(num);
       setIsCalculated(false);
     } else {
-      setDisplay(display === '0' ? num : display + num);
+      // একাধিক ০ বা ডেসিমাল পয়েন্ট ঠেকানোর জন্য
+      if (num === '.' && display.includes('.')) return;
+      setDisplay(display === '0' && num !== '.' ? num : display + num);
     }
   };
 
   const handleOperator = (op: string) => {
     setIsCalculated(false);
-    setEquation(display + ' ' + op + ' ');
-    setDisplay('0');
+    
+    // যদি আগের কোনো অপারেশন থেকে রেজাল্ট থাকে এবং নতুন অপারেটর চাপা হয় (চেইন ক্যালকুলেশন)
+    if (equation && display !== '0') {
+      const parts = equation.trim().split(' ');
+      const num1 = parseFloat(parts[0]);
+      const prevOp = parts[1];
+      const num2 = parseFloat(display);
+      
+      let tempResult = 0;
+      if (prevOp === '+') tempResult = num1 + num2;
+      else if (prevOp === '-') tempResult = num1 - num2;
+      else if (prevOp === '*') tempResult = num1 * num2;
+      else if (prevOp === '/') tempResult = num2 !== 0 ? num1 / num2 : NaN;
+
+      if (isNaN(tempResult)) {
+        setDisplay('Error');
+        setEquation('');
+        return;
+      }
+      
+      const safeResult = Number(tempResult.toFixed(10)).toString();
+      setDisplay(safeResult);
+      setEquation(safeResult + ' ' + op + ' ');
+    } else {
+      setEquation(display + ' ' + op + ' ');
+      setDisplay('0');
+    }
   };
 
   const handleCalculate = () => {
     try {
-      const fullEquation = equation + display;
-      // সেফটি চেক (শুধু সংখ্যা এবং অপারেটর আছে কিনা)
-      if (/^[0-9+\-*/. ]+$/.test(fullEquation)) {
-        // eslint-disable-next-line no-eval
-        const result = eval(fullEquation).toString();
-        setDisplay(result);
-        setEquation('');
-        setIsCalculated(true);
+      if (!equation) return;
+      
+      const parts = equation.trim().split(' ');
+      if (parts.length < 2) return;
+      
+      const num1 = parseFloat(parts[0]);
+      const op = parts[1];
+      const num2 = parseFloat(display);
+
+      let result = 0;
+
+      // eval() বাদ দিয়ে সেফ ক্যালকুলেশন
+      switch (op) {
+        case '+': result = num1 + num2; break;
+        case '-': result = num1 - num2; break;
+        case '*': result = num1 * num2; break;
+        case '/': 
+          if (num2 === 0) throw new Error("Division by zero");
+          result = num1 / num2; 
+          break;
+        default: return;
       }
+
+      // ফ্লোটিং পয়েন্ট এরর ঠিক করার জন্য (যেমন: 0.1 + 0.2 = 0.30000000000000004)
+      const finalResult = Number(result.toFixed(10)).toString();
+      
+      setDisplay(finalResult);
+      setEquation('');
+      setIsCalculated(true);
     } catch (error) {
       setDisplay('Error');
+      setEquation('');
     }
   };
 

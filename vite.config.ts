@@ -40,6 +40,10 @@ export default defineConfig({
             purpose: 'maskable'
           }
         ]
+      },
+    
+      workbox: {
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // ৫ মেগাবাইট পর্যন্ত ক্যাশ করতে দেবে
       }
     })
   ],

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Building2, Mail, Lock, User, Loader2, Phone } from 'lucide-react';
+import PremiumToast from '../components/PremiumToast';
 
 export default function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
@@ -13,6 +14,17 @@ export default function AuthPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+
+  // ✅ প্রিমিয়াম টোস্ট স্টেট
+  const [toast, setToast] = useState<{ show: boolean; message: string; type: 'success' | 'error' }>({ 
+    show: false, 
+    message: '', 
+    type: 'success' 
+  });
+
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ show: true, message, type });
+  };
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -39,8 +51,15 @@ export default function AuthPage() {
         });
         if (error) throw error;
         
-        alert('রেজিস্ট্রেশন সফল হয়েছে! আপনার অ্যাকাউন্টটি অ্যাডমিনের অনুমোদনের অপেক্ষায় আছে।');
-        setIsLogin(true);
+        // ✅ alert() এর বদলে PremiumToast ব্যবহার করা হলো
+        showToast('রেজিস্ট্রেশন সফল হয়েছে! অ্যাডমিনের অনুমোদনের অপেক্ষায় আছে।', 'success');
+        
+        // ২.৫ সেকেন্ড পর লগইন স্ক্রিনে ফিরে যাবে
+        setTimeout(() => {
+          setIsLogin(true);
+          setPassword('');
+          setConfirmPassword('');
+        }, 2500);
       }
     } catch (error: any) {
       setErrorMsg(error.message);
@@ -51,6 +70,15 @@ export default function AuthPage() {
 
   return (
     <div className="h-[100dvh] bg-gradient-to-br from-[#0B5C47] via-[#07465B] to-[#062D5E] flex items-center justify-center p-4 relative overflow-hidden font-serif">
+      
+      {/* ✅ প্রিমিয়াম টোস্ট কম্পোনেন্ট */}
+      <PremiumToast
+        show={toast.show}
+        message={toast.message}
+        type={toast.type}
+        onClose={() => setToast({ ...toast, show: false })}
+      />
+
       <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
         <div className="absolute -top-20 -left-20 w-64 h-64 bg-[#43A047]/20 rounded-full blur-3xl"></div>
         <div className="absolute bottom-0 -right-20 w-80 h-80 bg-[#1E88E5]/20 rounded-full blur-3xl"></div>

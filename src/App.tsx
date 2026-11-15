@@ -33,7 +33,7 @@ import SetupBusinessPage from './pages/SetupBusinessPage';
 
 import { AppProvider } from './context/AppContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import InstallPWA from './components/InstallPWA'; // ✅ নতুন কম্পোনেন্ট
+import InstallPWA from './components/InstallPWA';
 
 export type ScreenKey = 
   | 'dashboard' | 'purchase' | 'sale'
@@ -60,7 +60,7 @@ const defaultModeConfig: ModeConfig = {
 };
 
 function AppContent() {
-  const { user, userStatus, activeBusiness, isLoading, businesses, switchBusiness, signOut } = useAuth(); // ✅ userStatus ও signOut নিন
+  const { user, userStatus, activeBusiness, isLoading, businesses, switchBusiness, signOut } = useAuth();
 
   const [currentScreen, setCurrentScreen] = useState<ScreenKey>(() => {
     const saved = localStorage.getItem('currentScreen');
@@ -188,7 +188,7 @@ function AppContent() {
 
   if (!user) return <AuthPage />;
 
-  // ✅ নতুন: ইউজার pending থাকলে তাকে আটকে রাখা
+  // ✅ Pending স্ক্রিন (যদি ইউজার অ্যাডমিন দ্বারা অনুমোদিত না হয়)
   if (user && userStatus === 'pending') {
     return (
       <div className="h-[100dvh] flex flex-col items-center justify-center bg-[#EFF6F3] p-5 text-center">
@@ -196,8 +196,8 @@ function AppContent() {
           <AlertTriangle size={32} />
         </div>
         <h1 className="text-xl font-bold text-[#0B5C47] mb-2">অনুমোদনের অপেক্ষায়!</h1>
-        <p className="text-gray-600 mb-6 text-sm">আপনার অ্যাকাউন্টটি অ্যাডমিনের অনুমোদনের জন্য অপেক্ষা করছে। অনুমোদন পেলে ইমেইলে একটি কোড পাঠানো হবে।</p>
-        <button onClick={signOut} className="bg-red-500 text-white px-8 py-2.5 rounded-xl font-bold active:scale-95 transition">
+        <p className="text-gray-600 mb-6 text-sm">আপনার অ্যাকাউন্টটি বর্তমানে অ্যাডমিনের অনুমোদনের জন্য অপেক্ষা করছে। অনুগ্রহ করে অপেক্ষা করুন।</p>
+        <button onClick={signOut} className="bg-red-500 text-white px-8 py-2.5 rounded-xl font-bold shadow-md active:scale-95 transition">
           লগআউট করুন
         </button>
       </div>
@@ -314,7 +314,6 @@ function AppContent() {
     <>
       {renderScreen()}
       
-      {/* ✅ মোবাইলে ইনস্টল ব্যানার */}
       <InstallPWA />
 
       {showExitModal && (

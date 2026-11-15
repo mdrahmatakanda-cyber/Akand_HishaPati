@@ -12,7 +12,7 @@ interface Business {
 
 interface AuthContextType {
   user: any | null;
-  userStatus: string | null; // ✅ নতুন
+  userStatus: string | null;
   businesses: Business[]; 
   activeBusiness: Business | null; 
   business: Business | null; 
@@ -27,7 +27,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<any | null>(null);
-  const [userStatus, setUserStatus] = useState<string | null>(null); // ✅ নতুন
+  const [userStatus, setUserStatus] = useState<string | null>(null);
   const [businesses, setBusinesses] = useState<Business[]>([]);
   const [activeBusiness, setActiveBusiness] = useState<Business | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -38,6 +38,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       if (!session?.user) {
         setUser(null);
+        setUserStatus(null);
         setBusinesses([]);
         setActiveBusiness(null);
         setIsLoading(false);
@@ -45,6 +46,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       setUser(session.user);
+
+      // প্রোফাইল থেকে স্ট্যাটাস এবং কারেন্ট বিজনেস বের করা
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('business_id, status')
+        .eq('id', session.user.id)
+        .single();
+
+      setUserStatus(profile?.status || 'pending'); 
 
       // সব দোকান লোড করা
       const { data: allBiz } = await supabase
@@ -55,18 +65,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       setBusinesses(allBiz || []);
 
-      // প্রোফাইল থেকে বর্তমান সিলেক্টেড দোকান বের করা
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('business_id, status') // ✅ status চেক করা হচ্ছে
-        .eq('id', session.user.id)
-        .single();
-
-      setUserStatus(profile?.status || 'pending'); // ✅ স্ট্যাটাস সেট
-
       if (profile?.business_id && allBiz) {
         const active = allBiz.find(b => b.id === profile.business_id);
-        // যদি প্রোফাইলে থাকা আইডি ডাটাবেসে না থাকে (ডিলিট হয়ে গেছে), তবে প্রথমটি সিলেক্ট হবে
         if (active) {
           setActiveBusiness(active);
         } else if (allBiz.length > 0) {

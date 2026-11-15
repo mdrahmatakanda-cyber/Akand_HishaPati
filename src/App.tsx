@@ -60,7 +60,7 @@ const defaultModeConfig: ModeConfig = {
 };
 
 function AppContent() {
-  const { user, activeBusiness, isLoading, businesses, switchBusiness } = useAuth();
+  const { user, userStatus, activeBusiness, isLoading, businesses, switchBusiness, signOut } = useAuth(); // ✅ userStatus ও signOut নিন
 
   const [currentScreen, setCurrentScreen] = useState<ScreenKey>(() => {
     const saved = localStorage.getItem('currentScreen');
@@ -187,6 +187,22 @@ function AppContent() {
   }
 
   if (!user) return <AuthPage />;
+
+  // ✅ নতুন: ইউজার pending থাকলে তাকে আটকে রাখা
+  if (user && userStatus === 'pending') {
+    return (
+      <div className="h-[100dvh] flex flex-col items-center justify-center bg-[#EFF6F3] p-5 text-center">
+        <div className="w-16 h-16 bg-[#0B5C47]/10 text-[#0B5C47] rounded-full flex items-center justify-center mb-4">
+          <AlertTriangle size={32} />
+        </div>
+        <h1 className="text-xl font-bold text-[#0B5C47] mb-2">অনুমোদনের অপেক্ষায়!</h1>
+        <p className="text-gray-600 mb-6 text-sm">আপনার অ্যাকাউন্টটি অ্যাডমিনের অনুমোদনের জন্য অপেক্ষা করছে। অনুমোদন পেলে ইমেইলে একটি কোড পাঠানো হবে।</p>
+        <button onClick={signOut} className="bg-red-500 text-white px-8 py-2.5 rounded-xl font-bold active:scale-95 transition">
+          লগআউট করুন
+        </button>
+      </div>
+    );
+  }
   
   if (user && !activeBusiness) return <SetupBusinessPage />;
 

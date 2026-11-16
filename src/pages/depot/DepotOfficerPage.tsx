@@ -134,16 +134,23 @@ export default function DepotOfficerPage({ onBack, onNavigate }: Props) {
 
   const handleViewDocument = async (fileKey: string) => {
     try {
-      if (fileKey.startsWith('http')) {
-        window.open(fileKey, '_blank');
-      } else {
-        setLoadingDocKey(fileKey);
-        const url = await getUpstashFileUrl(fileKey);
-        window.open(url, '_blank');
-        setLoadingDocKey(null);
+      setLoadingDocKey(fileKey);
+      let url = fileKey;
+      
+      if (!fileKey.startsWith('http')) {
+        url = await getUpstashFileUrl(fileKey);
       }
+
+      // ✅ নতুন ট্যাবে ফাইল ওপেন করার জন্য (ডাউনলোড হবে না)
+      const link = document.createElement('a');
+      link.href = url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.click();
+      
     } catch (error: any) {
       showToast('ফাইল দেখতে সমস্যা হয়েছে: ' + error.message, 'error');
+    } finally {
       setLoadingDocKey(null);
     }
   };

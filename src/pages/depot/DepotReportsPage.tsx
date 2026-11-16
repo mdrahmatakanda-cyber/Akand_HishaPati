@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { 
   ArrowLeft, Printer, TrendingUp, ShoppingBag, Banknote, 
-  Truck, Target, Users, CalendarDays, X, ChevronRight, Check, Loader2
+  Target, CalendarDays, X, ChevronRight, Check, Loader2, Wallet
 } from 'lucide-react';
 import { toBangla } from '../../lib/utils';
 import { useAppContext } from '../../context/AppContext';
@@ -20,7 +20,7 @@ export default function DepotReportsPage({ onBack }: Props) {
   const [isLoading, setIsLoading] = useState(true);
   const [reportData, setReportData] = useState<any>({
     totalSales: 0, totalPurchases: 0, totalExpenses: 0,
-    transportSurplus: 0, totalProfit: 0, partnerProfit: 0,
+    totalInvestment: 0, totalProfit: 0,
   });
 
   // ফিল্টার স্টেট
@@ -73,8 +73,10 @@ export default function DepotReportsPage({ onBack }: Props) {
           } else if (detailType.key === 'expenses') {
             tableName = 'expenses'; dateColumn = 'date';
             selectQuery = 'id, expense_type, amount, date, note';
+          } else if (detailType.key === 'investment') {
+            tableName = 'partners'; dateColumn = 'created_at';
+            selectQuery = 'id, name, initial_capital, created_at';
           } else {
-            // যদি transport বা profit হয়, আপাতত খালি রাখছি (পরবর্তীতে আলাদা কুয়েরি হবে)
             setDetailListData([]);
             setIsDetailLoading(false);
             return;
@@ -156,7 +158,17 @@ export default function DepotReportsPage({ onBack }: Props) {
         });
 
         if (error) throw error;
-        if (data) setReportData(data);
+        
+        // ✅ পার্টনার টেবিল থেকে মোট ইনভেস্ট বের করা
+        const { data: invData } = await supabase
+          .from('partners')
+          .select('initial_capital')
+          .eq('business_id', activeBusiness.id)
+          .is('deleted_at', null);
+        
+        const totalInv = invData?.reduce((acc, curr) => acc + Number(curr.initial_capital || 0), 0) || 0;
+
+        if (data) setReportData({ ...data, totalInvestment: totalInv });
 
         // সাম্প্রতিক লেনদেন ফেচ (মূল পেজের জন্য)
         if (isDemoMode) {
@@ -251,30 +263,17 @@ export default function DepotReportsPage({ onBack }: Props) {
           </div>
         </div>
 
-        {/* সামারি কার্ড (৬টি) */}
+        {/* সামারি কার্ড (৫টি) */}
         <div className="grid grid-cols-2 gap-2 shrink-0">
-          <SummaryCard title="মোট বিক্রি" value={reportData.totalSales} icon={TrendingUp} color="#2E7D32" bg="bg-gradient-to-br from-[#F0FDF4] to-white" border="border-green-200" textColor="text-green-700" formatTaka={formatTaka} isLoading={isLoading} onClick={() => { setDetailType({key: 'sales', title: 'মোট বিক্রির বিস্তারিত'}); setIsDetailModalOpen(true); }} />
+          <SummaryCard title="মোট ইনভেস্ট" value={reportData.totalInvestment} icon={Wallet} color="#8E24AA" bg="bg-gradient-to-br from-[#FAF5FF] to-white" border="border-purple-200" textColor="text-purple-700" formatTaka={formatTaka} isLoading={isLoading} onClick={() => { setDetailType({key: 'investment', title: 'মোট ইনভেস্টের বিস্তারিত'}); setIsDetailModalOpen(true); }} />
           
           <SummaryCard title="মোট ক্রয়" value={reportData.totalPurchases} icon={ShoppingBag} color="#1565C0" bg="bg-gradient-to-br from-[#EFF6FF] to-white" border="border-blue-200" textColor="text-blue-700" formatTaka={formatTaka} isLoading={isLoading} onClick={() => { setDetailType({key: 'purchases', title: 'মোট ক্রয়ের বিস্তারিত'}); setIsDetailModalOpen(true); }} />
           
+          <SummaryCard title="মোট বিক্রি" value={reportData.totalSales} icon={TrendingUp} color="#2E7D32" bg="bg-gradient-to-br from-[#F0FDF4] to-white" border="border-green-200" textColor="text-green-700" formatTaka={formatTaka} isLoading={isLoading} onClick={() => { setDetailType({key: 'sales', title: 'মোট বিক্রির বিস্তারিত'}); setIsDetailModalOpen(true); }} />
+          
           <SummaryCard title="মোট খরচ" value={reportData.totalExpenses} icon={Banknote} color="#D32F2F" bg="bg-gradient-to-br from-[#FEF2F2] to-white" border="border-red-200" textColor="text-red-700" formatTaka={formatTaka} isLoading={isLoading} onClick={() => { setDetailType({key: 'expenses', title: 'মোট খরচের বিস্তারিত'}); setIsDetailModalOpen(true); }} />
           
-          <SummaryCard 
-            title="গাড়ি ভাড়া" 
-            value={reportData.transportSurplus} 
-            icon={Truck} 
-            color={reportData.transportSurplus >= 0 ? "#15803D" : "#B91C1C"} 
-            bg={reportData.transportSurplus >= 0 ? "bg-gradient-to-br from-[#ECFDF5] to-white" : "bg-gradient-to-br from-[#FFF1F2] to-white"} 
-            border={reportData.transportSurplus >= 0 ? "border-emerald-200" : "border-rose-200"} 
-            textColor={reportData.transportSurplus >= 0 ? "text-emerald-700" : "text-rose-700"} 
-            formatTaka={formatTaka} 
-            isLoading={isLoading}
-            onClick={() => { setDetailType({key: 'transport', title: 'গাড়ি ভাড়ার বিস্তারিত'}); setIsDetailModalOpen(true); }}
-          />
-          
           <SummaryCard title="মোট লাভ" value={reportData.totalProfit} icon={Target} color="#047857" bg="bg-gradient-to-br from-[#F0FDFA] to-white" border="border-teal-200" textColor="text-teal-700" formatTaka={formatTaka} isLoading={isLoading} onClick={() => { setDetailType({key: 'profit', title: 'মোট লাভের বিস্তারিত'}); setIsDetailModalOpen(true); }} />
-          
-          <SummaryCard title="পার্টনার লাভ" value={reportData.partnerProfit} icon={Users} color="#8E24AA" bg="bg-gradient-to-br from-[#FAF5FF] to-white" border="border-purple-200" textColor="text-purple-700" formatTaka={formatTaka} isLoading={isLoading} onClick={() => { setDetailType({key: 'partner_profit', title: 'পার্টনার লাভের বিস্তারিত'}); setIsDetailModalOpen(true); }} />
         </div>
 
         {/* বিস্তারিত রিপোর্ট সেকশন */}
@@ -413,7 +412,7 @@ export default function DepotReportsPage({ onBack }: Props) {
                         {item.receipt_no || item.challan_no || item.expense_type || item.name || 'লেনদেন'}
                       </p>
                       <p className="text-[10px] text-da-textMuted mt-0.5 truncate">
-                        {item.sale_date || item.purchase_date || item.date ? new Date(item.sale_date || item.purchase_date || item.date).toLocaleDateString('en-GB') : ''}
+                        {item.sale_date || item.purchase_date || item.date || item.created_at ? new Date(item.sale_date || item.purchase_date || item.date || item.created_at).toLocaleDateString('en-GB') : ''}
                         {item.customers?.name ? ` | ${item.customers.name}` : ''}
                         {item.companies?.name ? ` | ${item.companies.name}` : ''}
                         {item.note ? ` | ${item.note}` : ''}
@@ -421,7 +420,7 @@ export default function DepotReportsPage({ onBack }: Props) {
                     </div>
                     <div className="text-right shrink-0">
                       <p className="font-black text-sm text-da-depotBlue">
-                        ৳ {toBangla(item.total_amount || item.amount || 0)}
+                        ৳ {toBangla(item.total_amount || item.amount || item.initial_capital || 0)}
                       </p>
                     </div>
                   </div>

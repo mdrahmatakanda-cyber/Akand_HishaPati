@@ -1,13 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { 
   ArrowLeft, HelpCircle, Printer, 
   Search, Plus, CheckCircle2, X, Settings, 
   Trash2, Star, RefreshCw, Smartphone, Save,
-  FileText, LayoutTemplate, ReceiptText, ChevronRight, Eye, Loader2
+  FileText, LayoutTemplate, ReceiptText, ChevronRight, Eye, Loader2, Image as ImageIcon
 } from 'lucide-react';
 import { toBangla } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
+import { uploadImageToSupabase } from '../lib/upload';
 import PremiumToast from '../components/PremiumToast';
 import { ReceiptModal, DEFAULT_RECEIPT_SETTINGS, getMergedReceiptSettings, formatReceiptNumber, type ReceiptSettings, type ReceiptTypeKey, type ReceiptData } from './ReceiptModal';
 
@@ -41,8 +42,13 @@ export default function PrinterPage({ onBack }: Props) {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<'common' | 'by_type'>('common');
   const [activeReceiptTab, setActiveReceiptTab] = useState<ReceiptTypeKey>('sale');
-  const [invoiceFormat, setInvoiceFormat] = useState<'A4' | '80mm' | '58mm'>('A4');
+  const [invoiceFormat, setInvoiceFormat] = useState<'A4' | 'A5' | 'custom'>('A4');
   const [receiptSettings, setReceiptSettings] = useState<ReceiptSettings>(() => getMergedReceiptSettings(null, activeBusiness));
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState<string>('');
+  const logoInputRef = useRef<HTMLInputElement>(null);
+
+  const normalizeFormat = (f: any): 'A4' | 'A5' | 'custom' => (f === 'A5' || f === 'custom' ? f : 'A4');
 
   useEffect(() => {
     if (!activeBusiness?.id) return;
@@ -51,8 +57,9 @@ export default function PrinterPage({ onBack }: Props) {
         const localSaved = localStorage.getItem(`receipt_settings_${activeBusiness.id}`);
         if (localSaved) {
           const mergedLocal = getMergedReceiptSettings(JSON.parse(localSaved), activeBusiness);
-          setReceiptSettings(mergedLocal);
-          setInvoiceFormat(mergedLocal.format || 'A4');
+          const safeLocalFmt = normalizeFormat(mergedLocal.format);
+          setReceiptSettings({ ...mergedLocal, format: safeLocalFmt });
+          setInvoiceFormat(safeLocalFmt);
         } else {
           setReceiptSettings(getMergedReceiptSettings(null, activeBusiness));
         }
@@ -65,9 +72,10 @@ export default function PrinterPage({ onBack }: Props) {
 
         if (!error && data?.receipt_settings && Object.keys(data.receipt_settings).length > 0) {
           const mergedCloud = getMergedReceiptSettings(data.receipt_settings, activeBusiness);
-          setReceiptSettings(mergedCloud);
-          setInvoiceFormat(mergedCloud.format || 'A4');
-          localStorage.setItem(`receipt_settings_${activeBusiness.id}`, JSON.stringify(mergedCloud));
+          const safeCloudFmt = normalizeFormat(mergedCloud.format);
+          setReceiptSettings({ ...mergedCloud, format: safeCloudFmt });
+          setInvoiceFormat(safeCloudFmt);
+          localStorage.setItem(`receipt_settings_${activeBusiness.id}`, JSON.stringify({ ...mergedCloud, format: safeCloudFmt }));
         }
       } catch (err) {
         console.error('Receipt settings load error:', err);
@@ -80,7 +88,12 @@ export default function PrinterPage({ onBack }: Props) {
     if (!activeBusiness?.id) return showToast('বিজনেস পাওয়া যায়নি!', 'error');
     setIsSavingSettings(true);
     try {
-      const dataToSave: ReceiptSettings = { ...receiptSettings, format: invoiceFormat };
+      let finalLogoUrl = receiptSettings.shopLogoUrl || '';
+      if (logoFile) {
+        finalLogoUrl = await uploadImageToSupabase(logoFile, 'logos');
+      }
+
+      const dataToSave: ReceiptSettings = { ...receiptSettings, shopLogoUrl: finalLogoUrl, format: invoiceFormat };
       const { error } = await supabase
         .from('businesses')
         .update({ receipt_settings: dataToSave })
@@ -89,6 +102,8 @@ export default function PrinterPage({ onBack }: Props) {
 
       localStorage.setItem(`receipt_settings_${activeBusiness.id}`, JSON.stringify(dataToSave));
       setReceiptSettings(dataToSave);
+      setLogoFile(null);
+      setLogoPreviewUrl('');
       showToast('রিসিপ্ট সেটিংস ক্লাউডে সেভ হয়েছে!', 'success');
       setIsSettingsOpen(false);
     } catch (err: any) {
@@ -393,19 +408,46 @@ export default function PrinterPage({ onBack }: Props) {
                         <FileText size={20} className={invoiceFormat === 'A4' ? 'text-[#1E88E5]' : 'text-gray-400'} />
                         <span className="text-[11px] font-bold text-gray-800">A4 পেজ</span>
                       </button>
-                      <button type="button" onClick={() => setInvoiceFormat('80mm')} className={`p-2.5 rounded-xl border-2 flex flex-col items-center justify-center gap-1 transition ${invoiceFormat === '80mm' ? 'border-[#1E88E5] bg-[#EFF6FF]' : 'border-gray-200 bg-white'}`}>
-                        <LayoutTemplate size={20} className={invoiceFormat === '80mm' ? 'text-[#1E88E5]' : 'text-gray-400'} />
-                        <span className="text-[11px] font-bold text-gray-800">থার্মাল ৮০</span>
+                      <button type="button" onClick={() => setInvoiceFormat('A5')} className={`p-2.5 rounded-xl border-2 flex flex-col items-center justify-center gap-1 transition ${invoiceFormat === 'A5' ? 'border-[#1E88E5] bg-[#EFF6FF]' : 'border-gray-200 bg-white'}`}>
+                        <LayoutTemplate size={20} className={invoiceFormat === 'A5' ? 'text-[#1E88E5]' : 'text-gray-400'} />
+                        <span className="text-[11px] font-bold text-gray-800">A5 পেজ</span>
                       </button>
-                      <button type="button" onClick={() => setInvoiceFormat('58mm')} className={`p-2.5 rounded-xl border-2 flex flex-col items-center justify-center gap-1 transition ${invoiceFormat === '58mm' ? 'border-[#1E88E5] bg-[#EFF6FF]' : 'border-gray-200 bg-white'}`}>
-                        <ReceiptText size={20} className={invoiceFormat === '58mm' ? 'text-[#1E88E5]' : 'text-gray-400'} />
-                        <span className="text-[11px] font-bold text-gray-800">থার্মাল ৫৮</span>
+                      <button type="button" onClick={() => setInvoiceFormat('custom')} className={`p-2.5 rounded-xl border-2 flex flex-col items-center justify-center gap-1 transition ${invoiceFormat === 'custom' ? 'border-[#1E88E5] bg-[#EFF6FF]' : 'border-gray-200 bg-white'}`}>
+                        <ReceiptText size={20} className={invoiceFormat === 'custom' ? 'text-[#1E88E5]' : 'text-gray-400'} />
+                        <span className="text-[11px] font-bold text-gray-800">কাস্টম</span>
                       </button>
                     </div>
 
+                    {invoiceFormat === 'custom' && (
+                      <div className="grid grid-cols-2 gap-2.5 bg-blue-50/60 p-2.5 rounded-xl border border-blue-200">
+                        <div>
+                          <label className="text-[10px] font-bold text-gray-600 mb-1 block">প্রস্থ (mm)</label>
+                          <input
+                            type="number"
+                            min={80}
+                            max={350}
+                            value={receiptSettings.customWidthMm ?? 148}
+                            onChange={e => setReceiptSettings({ ...receiptSettings, customWidthMm: Number(e.target.value) || 148 })}
+                            className="w-full border border-gray-300 rounded-lg p-1.5 text-sm font-bold bg-white outline-none focus:border-[#1E88E5]"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-bold text-gray-600 mb-1 block">উচ্চতা (mm)</label>
+                          <input
+                            type="number"
+                            min={100}
+                            max={450}
+                            value={receiptSettings.customHeightMm ?? 210}
+                            onChange={e => setReceiptSettings({ ...receiptSettings, customHeightMm: Number(e.target.value) || 210 })}
+                            className="w-full border border-gray-300 rounded-lg p-1.5 text-sm font-bold bg-white outline-none focus:border-[#1E88E5]"
+                          />
+                        </div>
+                      </div>
+                    )}
+
                     <div className="grid grid-cols-2 gap-2.5 pt-1">
                       <div>
-                        <label className="text-[10px] font-bold text-gray-500 mb-1 block">লেখার সাইজ (A4)</label>
+                        <label className="text-[10px] font-bold text-gray-500 mb-1 block">লেখার সাইজ</label>
                         <div className="grid grid-cols-3 gap-1">
                           {[{ k: 'small', l: 'ছোট' }, { k: 'medium', l: 'মাঝারি' }, { k: 'large', l: 'বড়' }].map(f => (
                             <button key={f.k} type="button" onClick={() => setReceiptSettings({ ...receiptSettings, fontSize: f.k as any })} className={`py-1.5 rounded-lg border text-[10px] font-bold ${receiptSettings.fontSize === f.k ? 'bg-[#0B5C47] text-white border-[#0B5C47]' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>{f.l}</button>
@@ -413,7 +455,7 @@ export default function PrinterPage({ onBack }: Props) {
                         </div>
                       </div>
                       <div>
-                        <label className="text-[10px] font-bold text-gray-500 mb-1 block">প্রিন্ট কপি (A4)</label>
+                        <label className="text-[10px] font-bold text-gray-500 mb-1 block">প্রিন্ট কপি</label>
                         <div className="grid grid-cols-2 gap-1">
                           <button type="button" onClick={() => setReceiptSettings({ ...receiptSettings, copyMode: 'single' })} className={`py-1.5 rounded-lg border text-[10px] font-bold ${receiptSettings.copyMode === 'single' ? 'bg-[#0B5C47] text-white border-[#0B5C47]' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>১ কপি</button>
                           <button type="button" onClick={() => setReceiptSettings({ ...receiptSettings, copyMode: 'double' })} className={`py-1.5 rounded-lg border text-[10px] font-bold ${receiptSettings.copyMode === 'double' ? 'bg-[#0B5C47] text-white border-[#0B5C47]' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>২ কপি</button>
@@ -458,23 +500,113 @@ export default function PrinterPage({ onBack }: Props) {
                       <span className="w-1.5 h-4 bg-[#B98F33] rounded-full" />
                       <h3 className="text-xs font-bold text-[#0F2A3D]">লোগো ও রঙের ধরন</h3>
                     </div>
-                    <div className="grid grid-cols-2 gap-2.5">
-                      <div>
-                        <label className="text-[11px] font-bold text-gray-600 mb-1 block">লোগো ব্যাজ (উপরে)</label>
-                        <input type="text" maxLength={4} value={receiptSettings.badgeText} onChange={e => setReceiptSettings({...receiptSettings, badgeText: e.target.value})} className="w-full border border-gray-300 rounded-xl p-2.5 text-sm outline-none focus:border-[#0B5C47]" />
+                    <div>
+                      <label className="text-[11px] font-bold text-gray-600 mb-1.5 block">প্রতিষ্ঠানের লোগো (গ্যালারি থেকে আপলোড)</label>
+                      <input
+                        type="file"
+                        ref={logoInputRef}
+                        accept="image/*"
+                        onChange={e => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setLogoFile(file);
+                            setLogoPreviewUrl(URL.createObjectURL(file));
+                          }
+                        }}
+                        className="hidden"
+                      />
+                      {(logoPreviewUrl || receiptSettings.shopLogoUrl) ? (
+                        <div className="flex items-center justify-between gap-3 p-2.5 rounded-xl border border-gray-200 bg-gray-50">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <img src={logoPreviewUrl || receiptSettings.shopLogoUrl} alt="Logo" className="w-12 h-12 rounded-full object-contain border border-gray-300 bg-white shrink-0" />
+                            <span className="text-xs font-bold text-gray-700 truncate">{logoFile ? logoFile.name : 'লোগো যুক্ত করা হয়েছে'}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button type="button" onClick={() => logoInputRef.current?.click()} className="px-2.5 py-1.5 rounded-lg bg-[#EFF6FF] text-[#1565C0] text-[11px] font-bold border border-[#1565C0]/20">পরিবর্তন</button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setLogoFile(null);
+                                setLogoPreviewUrl('');
+                                setReceiptSettings({ ...receiptSettings, shopLogoUrl: '' });
+                              }}
+                              className="p-1.5 rounded-lg bg-red-50 text-red-600 border border-red-200"
+                              title="লোগো সরান"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => logoInputRef.current?.click()}
+                          className="w-full border-2 border-dashed border-gray-300 rounded-xl p-3 flex items-center justify-center gap-2 text-gray-600 hover:border-[#0B5C47] hover:text-[#0B5C47] transition"
+                        >
+                          <ImageIcon size={18} />
+                          <span className="text-xs font-bold">গ্যালারি থেকে লোগো আপলোড করুন</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {/* লোগো আপলোড না থাকলেই কেবল লোগো ব্যাজ অপশন দেখাবে */}
+                    {!(logoPreviewUrl || receiptSettings.shopLogoUrl) && (
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <div>
+                          <label className="text-[11px] font-bold text-gray-600 mb-1 block">লোগো ব্যাজ (উপরে)</label>
+                          <input type="text" maxLength={4} value={receiptSettings.badgeText} onChange={e => setReceiptSettings({...receiptSettings, badgeText: e.target.value})} className="w-full border border-gray-300 rounded-xl p-2.5 text-sm outline-none focus:border-[#0B5C47]" />
+                        </div>
+                        <div>
+                          <label className="text-[11px] font-bold text-gray-600 mb-1 block">লোগো ব্যাজ (নিচে)</label>
+                          <input type="text" maxLength={8} value={receiptSettings.badgeSubText} onChange={e => setReceiptSettings({...receiptSettings, badgeSubText: e.target.value})} className="w-full border border-gray-300 rounded-xl p-2.5 text-sm outline-none focus:border-[#0B5C47]" />
+                        </div>
                       </div>
-                      <div>
-                        <label className="text-[11px] font-bold text-gray-600 mb-1 block">লোগো ব্যাজ (নিচে)</label>
-                        <input type="text" maxLength={8} value={receiptSettings.badgeSubText} onChange={e => setReceiptSettings({...receiptSettings, badgeSubText: e.target.value})} className="w-full border border-gray-300 rounded-xl p-2.5 text-sm outline-none focus:border-[#0B5C47]" />
+                    )}
+                    {/* ১. লেখার কালার */}
+                    <div>
+                      <div className="flex justify-between items-center mb-1.5">
+                        <label className="text-[11px] font-bold text-gray-600">লেখার কালার</label>
+                        <input
+                          type="color"
+                          value={receiptSettings.textColor || '#1B2A41'}
+                          onChange={e => setReceiptSettings({ ...receiptSettings, textColor: e.target.value })}
+                          className="w-7 h-6 rounded border border-gray-300 cursor-pointer p-0 bg-transparent"
+                          title="কাস্টম লেখার কালার"
+                        />
+                      </div>
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {[
+                          { label: 'নেভি', color: '#1B2A41' },
+                          { label: 'কালো', color: '#111827' },
+                          { label: 'সবুজ', color: '#064E3B' },
+                          { label: 'নীল', color: '#0D3B80' },
+                        ].map(c => (
+                          <button
+                            key={c.color}
+                            type="button"
+                            onClick={() => setReceiptSettings({ ...receiptSettings, textColor: c.color })}
+                            className={`py-1.5 rounded-xl border text-[10.5px] font-bold flex items-center justify-center gap-1.5 transition ${(receiptSettings.textColor || '#1B2A41') === c.color ? 'border-gray-900 bg-gray-100' : 'border-gray-200 bg-white'}`}
+                          >
+                            <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
+                            {c.label}
+                          </button>
+                        ))}
                       </div>
                     </div>
+
+                    {/* ২. বর্ডার কালার */}
                     <div>
-                      <label className="text-[11px] font-bold text-gray-600 mb-1 block">লোগো ইমেজ URL (ঐচ্ছিক)</label>
-                      <input type="text" value={receiptSettings.shopLogoUrl} onChange={e => setReceiptSettings({...receiptSettings, shopLogoUrl: e.target.value})} placeholder="https://..." className="w-full border border-gray-300 rounded-xl p-2.5 text-sm outline-none focus:border-[#0B5C47]" />
-                    </div>
-                    <div>
-                      <label className="text-[11px] font-bold text-gray-600 mb-1.5 block">রিসিপ্ট বর্ডার ও থিম কালার</label>
-                      <div className="grid grid-cols-4 gap-2">
+                      <div className="flex justify-between items-center mb-1.5">
+                        <label className="text-[11px] font-bold text-gray-600">বর্ডার কালার</label>
+                        <input
+                          type="color"
+                          value={receiptSettings.themeColor || '#B98F33'}
+                          onChange={e => setReceiptSettings({ ...receiptSettings, themeColor: e.target.value })}
+                          className="w-7 h-6 rounded border border-gray-300 cursor-pointer p-0 bg-transparent"
+                          title="কাস্টম বর্ডার কালার"
+                        />
+                      </div>
+                      <div className="grid grid-cols-4 gap-1.5">
                         {[
                           { label: 'সোনালী', color: '#B98F33' },
                           { label: 'সবুজ', color: '#0B5C47' },
@@ -485,9 +617,42 @@ export default function PrinterPage({ onBack }: Props) {
                             key={c.color}
                             type="button"
                             onClick={() => setReceiptSettings({ ...receiptSettings, themeColor: c.color })}
-                            className={`py-2 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition ${receiptSettings.themeColor === c.color ? 'border-gray-900 bg-gray-100' : 'border-gray-200 bg-white'}`}
+                            className={`py-1.5 rounded-xl border text-[10.5px] font-bold flex items-center justify-center gap-1.5 transition ${receiptSettings.themeColor === c.color ? 'border-gray-900 bg-gray-100' : 'border-gray-200 bg-white'}`}
                           >
                             <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
+                            {c.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* ৩. ব্যাকগ্রাউন্ড কালার (শুধু রিসিপ্টের প্রধান অংশে, মূল কাগজ সাদাই থাকবে) */}
+                    <div>
+                      <div className="flex justify-between items-center mb-1.5">
+                        <label className="text-[11px] font-bold text-gray-600">ব্যাকগ্রাউন্ড কালার (প্রধান অংশ)</label>
+                        <input
+                          type="color"
+                          value={receiptSettings.bgColor && receiptSettings.bgColor !== 'none' ? receiptSettings.bgColor : '#1565C0'}
+                          onChange={e => setReceiptSettings({ ...receiptSettings, bgColor: e.target.value })}
+                          className="w-7 h-6 rounded border border-gray-300 cursor-pointer p-0 bg-transparent"
+                          title="কাস্টম ব্যাকগ্রাউন্ড কালার"
+                        />
+                      </div>
+                      <div className="grid grid-cols-5 gap-1.5">
+                        {[
+                          { label: 'সোনালী', color: '#B98F33' },
+                          { label: 'সবুজ', color: '#0B5C47' },
+                          { label: 'নীল', color: '#1565C0' },
+                          { label: 'ধূসর', color: '#64748B' },
+                          { label: 'সাদা', color: 'none' },
+                        ].map(c => (
+                          <button
+                            key={c.color}
+                            type="button"
+                            onClick={() => setReceiptSettings({ ...receiptSettings, bgColor: c.color })}
+                            className={`py-1.5 rounded-xl border text-[10px] font-bold flex items-center justify-center gap-1 transition ${(receiptSettings.bgColor || receiptSettings.themeColor) === c.color ? 'border-gray-900 bg-gray-100' : 'border-gray-200 bg-white'}`}
+                          >
+                            <span className="w-2.5 h-2.5 rounded-full shrink-0 border border-gray-300" style={{ backgroundColor: c.color === 'none' ? '#ffffff' : c.color }} />
                             {c.label}
                           </button>
                         ))}
@@ -824,7 +989,7 @@ export default function PrinterPage({ onBack }: Props) {
         onFinalize={() => setIsPreviewOpen(false)}
         isSaving={false}
         previewOnly={true}
-        settingsOverride={{ ...receiptSettings, format: invoiceFormat }}
+        settingsOverride={{ ...receiptSettings, shopLogoUrl: logoPreviewUrl || receiptSettings.shopLogoUrl, format: invoiceFormat }}
         data={getSampleReceiptData(activeReceiptTab)}
       />
 

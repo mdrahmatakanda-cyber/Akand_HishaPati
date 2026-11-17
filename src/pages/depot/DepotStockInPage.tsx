@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
 import TransactionEngine, { fetchEngineData, type EngineProduct, type EngineParty } from '../../components/TransactionEngine';
 import { useAppContext } from '../../context/AppContext';
+import { showAppToast } from '../../components/PremiumToast';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { demoProducts, demoCompaniesList } from '../../lib/demoData';
@@ -58,11 +59,11 @@ export default function DepotStockInPage({ onBack }: Props) {
       });
 
       if (error) {
-        alert("সেভ করতে সমস্যা: " + error.message);
+        showAppToast("সেভ করতে সমস্যা: " + error.message, 'error');
         throw error;
       }
     }
-    alert('স্টক ইন সফলভাবে সম্পন্ন হয়েছে!');
+    showAppToast('স্টক ইন সফলভাবে সম্পন্ন হয়েছে!', 'success');
     onBack();
   };
 

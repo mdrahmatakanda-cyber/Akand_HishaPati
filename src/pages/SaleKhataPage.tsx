@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { toBangla } from '../lib/utils';
 import { useAppContext } from '../context/AppContext';
+import { showAppToast } from '../components/PremiumToast';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 
@@ -126,7 +127,7 @@ export default function SaleKhataPage({ onBack, onNavigate }: SaleKhataProps) {
             <button onClick={() => window.print()} className="p-1.5 bg-white/10 rounded-lg hover:bg-white/20 transition text-white">
               <FileText size={18} />
             </button>
-            <button onClick={() => alert('সাহায্য')} className="p-1.5 bg-white/10 rounded-lg hover:bg-white/20 transition text-white">
+            <button onClick={() => showAppToast('সাহায্য সেকশন শীঘ্রই আসছে!', 'success')} className="p-1.5 bg-white/10 rounded-lg hover:bg-white/20 transition text-white">
               <HelpCircle size={18} />
             </button>
           </div>

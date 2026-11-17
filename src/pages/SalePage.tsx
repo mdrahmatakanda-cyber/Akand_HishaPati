@@ -5,8 +5,13 @@ import { useAppContext } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { demoProducts, demoCustomersDetailed } from '../lib/demoData';
+import { showAppToast } from '../components/PremiumToast';
 
-interface SaleProps { onBack: () => void; onNavigate: (screen: string) => void; isDepot?: boolean; }
+interface SaleProps {
+  onBack: () => void;
+  onNavigate: (screen: string) => void;
+  isDepot?: boolean;
+}
 
 export default function SalePage({ onBack, onNavigate, isDepot = false }: SaleProps) {
   const { isDemoMode } = useAppContext();
@@ -24,15 +29,30 @@ export default function SalePage({ onBack, onNavigate, isDepot = false }: SalePr
 
       try {
         if (isDemoMode) {
-          setProducts(demoProducts.map(p => ({ 
-            id: p.id.toString(), name: p.name, category: p.category, company: p.company, 
-            stockQty: p.stock, rate: p.salePrice, unit: 'পিস', image_url: p.image_url
+          setProducts(demoProducts.map(p => ({
+            id: p.id.toString(),
+            name: p.name,
+            category: p.category,
+            company: p.company,
+            stockQty: p.stock,
+            rate: p.salePrice,
+            unit: 'পিস',
+            image_url: p.image_url
           })));
           setCustomers(demoCustomersDetailed.map((c: any) => ({
-            id: c.id, name: c.name, phone: c.phone || '', address: c.address || c.market_name || ''
+            id: c.id,
+            name: c.name,
+            phone: c.phone || '',
+            address: c.address || c.market_name || ''
           })));
         } else if (bizId) {
-          const res = await fetchEngineData(bizId, 'customers', 'sale_price', businesses.map(b => b.id), isDepot);
+          const res = await fetchEngineData(
+            bizId,
+            'customers',
+            'sale_price',
+            businesses.map(b => b.id),
+            isDepot
+          );
           setProducts(res.products);
           setCustomers(res.parties);
         }
@@ -43,14 +63,17 @@ export default function SalePage({ onBack, onNavigate, isDepot = false }: SalePr
       }
     };
     fetchData();
-  }, [isDemoMode, activeBusiness?.id]);
+  }, [isDemoMode, activeBusiness?.id, businesses.length, isDepot]);
 
   const handleFinalizeSale = async (data: any) => {
     if (!isDemoMode) {
-      const itemsJson = data.cart.map((item: any) => ({ 
-        product_id: item.id, quantity: Number(item.quantity) || 0, rate: Number(item.rate) || 0, total: (Number(item.quantity) || 0) * (Number(item.rate) || 0) 
+      const itemsJson = data.cart.map((item: any) => ({
+        product_id: item.id,
+        quantity: Number(item.quantity) || 0,
+        rate: Number(item.rate) || 0,
+        total: (Number(item.quantity) || 0) * (Number(item.rate) || 0)
       }));
-      
+
       const { error } = await supabase.rpc('create_sale', {
         p_business_id: activeBusiness?.id,
         p_customer_id: data.partyId || null,
@@ -59,38 +82,32 @@ export default function SalePage({ onBack, onNavigate, isDepot = false }: SalePr
         p_delivery_charge: data.deliveryVal,
         p_paid_amount: data.cashReceived,
         p_due_amount: data.dueAmount > 0 ? data.dueAmount : 0,
-        p_payment_method: 'cash', 
+        p_payment_method: 'cash',
         p_note: data.remarks,
         p_items: itemsJson,
         p_is_depot: isDepot
       });
-      
-      if (error) { alert("সেভ করতে সমস্যা: " + error.message); throw error; }
 
-      if (isDepot && activeBusiness?.id) {
-        const { data: latestSale } = await supabase
-          .from('sales')
-          .select('id')
-          .eq('business_id', activeBusiness.id)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (latestSale?.id) {
-          await supabase.from('sales').update({ is_depot: true }).eq('id', latestSale.id);
-        }
+      if (error) {
+        showAppToast("সেভ করতে সমস্যা: " + error.message, 'error');
+        throw error;
       }
     }
-    alert('বিক্রি সফলভাবে সম্পন্ন হয়েছে!');
-    onBack(); 
+    showAppToast('বিক্রি সফলভাবে সম্পন্ন হয়েছে!', 'success');
+    onBack();
   };
 
   if (isDataLoading) {
-    return <div className="h-[100dvh] flex flex-col items-center justify-center bg-da-bg"><Loader2 className="animate-spin text-da-green mb-3" size={32}/><p className="font-bold text-da-textMuted">ডেটা লোড হচ্ছে...</p></div>;
+    return (
+      <div className="h-[100dvh] flex flex-col items-center justify-center bg-da-bg">
+        <Loader2 className="animate-spin text-da-green mb-3" size={32} />
+        <p className="font-bold text-da-textMuted">ডেটা লোড হচ্ছে...</p>
+      </div>
+    );
   }
 
   return (
-    <TransactionEngine 
+    <TransactionEngine
       mode="sale"
       title="বিক্রয়"
       partyLabel="কাস্টমার"

@@ -286,7 +286,7 @@ export default function DashboardPage({ onNavigate, currentMode, modeConfig, onT
             <div 
               key={idx}
               className={`absolute inset-0 transition-opacity duration-1000 cursor-pointer ${currentSlide === idx ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'}`}
-              onClick={() => idx === 0 ? onNavigate('reports') : idx === 1 ? onNavigate('app_access') : alert("হেল্পলাইন")}
+              onClick={() => idx === 0 ? onNavigate('reports') : idx === 1 ? onNavigate('app_access') : onNavigate('help')}
             >
               <img 
                 src={img} 

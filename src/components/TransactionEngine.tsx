@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { toBangla, numberToWordsBn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
+import { showAppToast } from './PremiumToast';
 import { supabase } from '../lib/supabase';
 import { ReceiptModal, getMergedReceiptSettings, formatReceiptNumber, type ReceiptData, type ReceiptTypeKey } from '../pages/ReceiptModal';
 
@@ -139,7 +140,7 @@ export default function TransactionEngine({
   const dueAmount = finalTotal - (Number(cashReceived) || 0);
 
   const handleProceedToGatePass = () => {
-    if (!partyName.trim()) return alert(`${partyLabel}-এর নাম আবশ্যক!`);
+    if (!partyName.trim()) return showAppToast(`${partyLabel}-এর নাম আবশ্যক!`, 'error');
     setIsGatePassReady(true);
   };
 

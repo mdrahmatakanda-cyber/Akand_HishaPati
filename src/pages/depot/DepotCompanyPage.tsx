@@ -484,8 +484,9 @@ export default function DepotCompanyPage({ onBack, onNavigate }: Props) {
       contactPerson: c.contact_person || '', phone: c.phone || '', phone_2: (c as any).phone_2 || '', address: c.address || '', notes: c.notes || '',
       commission_upto_100: c.commission_rate_upto_100.toString(), commission_above_100: c.commission_rate_above_100.toString(),
       loading_rate: c.loading_unloading_rate_per_ton.toString(), delivery_rate: c.delivery_rent_per_ton.toString(),
-      transport_allowance: c.transport_allowance_per_ton.toString(), warehouse_rent: c.default_warehouse_rent.toString(),
-      manager_salary: c.default_manager_salary.toString()
+      transport_allowance: (c.transport_allowance_per_ton ?? 0).toString(),
+      warehouse_rent: (c.default_warehouse_rent ?? 15000).toString(),
+      manager_salary: (c.default_manager_salary ?? 10000).toString()
     });
     setIsEditingCompany(true);
     setCompanyImage(null); setCompanyDoc(null);
@@ -673,6 +674,8 @@ export default function DepotCompanyPage({ onBack, onNavigate }: Props) {
                   <p>কমিশন (১০০+): <span className="text-da-depotBlue">৳{toBangla(selectedCompany.commission_rate_above_100)}</span></p>
                   <p>ভাড়া: <span className="text-da-depotBlue">৳{toBangla(selectedCompany.delivery_rent_per_ton)}</span></p>
                   <p>লোডিং: <span className="text-da-depotBlue">৳{toBangla(selectedCompany.loading_unloading_rate_per_ton)}</span></p>
+                  <p>ডিপো ভাড়া: <span className="text-da-depotBlue">৳{toBangla(selectedCompany.default_warehouse_rent ?? 15000)}</span></p>
+                  <p>ম্যানেজার বেতন: <span className="text-da-depotBlue">৳{toBangla(selectedCompany.default_manager_salary ?? 10000)}</span></p>
                 </div>
               </div>
 
@@ -894,6 +897,21 @@ export default function DepotCompanyPage({ onBack, onNavigate }: Props) {
                   <div><label className="text-[10px] font-bold text-da-textMuted mb-1 block">লোডিং</label><input type="number" inputMode="decimal" value={companyForm.loading_rate} onChange={e => setCompanyForm({...companyForm, loading_rate: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
                   <div><label className="text-[10px] font-bold text-da-textMuted mb-1 block">ডেলিভারি</label><input type="number" inputMode="decimal" value={companyForm.delivery_rate} onChange={e => setCompanyForm({...companyForm, delivery_rate: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
                   <div><label className="text-[10px] font-bold text-da-textMuted mb-1 block">কোম্পানির</label><input type="number" inputMode="decimal" value={companyForm.transport_allowance} onChange={e => setCompanyForm({...companyForm, transport_allowance: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
+                </div>
+              </div>
+
+              {/* ✅ মাসিক ডিপো ভাড়া ও ম্যানেজার বেতন */}
+              <div className="bg-da-depotBg p-2.5 rounded-xl border border-da-cardBorder mt-1">
+                <h3 className="text-[11px] font-bold text-da-depotNavy mb-2 border-b border-da-cardBorder pb-1">মাসিক ডিপো ভাতা ও বেতন (৳)</h3>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] font-bold text-da-textMuted mb-1 block">ডিপো ভাড়া (মাসিক)</label>
+                    <input type="number" inputMode="decimal" value={companyForm.warehouse_rent} onChange={e => setCompanyForm({...companyForm, warehouse_rent: e.target.value})} placeholder="15000" className="w-full border border-da-cardBorder rounded-lg p-2 text-sm font-bold outline-none focus:border-da-depotBlue bg-white" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-da-textMuted mb-1 block">ম্যানেজার বেতন (মাসিক)</label>
+                    <input type="number" inputMode="decimal" value={companyForm.manager_salary} onChange={e => setCompanyForm({...companyForm, manager_salary: e.target.value})} placeholder="10000" className="w-full border border-da-cardBorder rounded-lg p-2 text-sm font-bold outline-none focus:border-da-depotBlue bg-white" />
+                  </div>
                 </div>
               </div>
 

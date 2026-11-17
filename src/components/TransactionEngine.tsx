@@ -12,7 +12,7 @@ import { ReceiptModal, getMergedReceiptSettings, formatReceiptNumber, type Recei
 
 export interface EngineProduct { id: string | number; name: string; category: string; company: string; stockQty: number; rate: number; unit: string; image_url?: string; }
 export interface EngineParty { id: string; name: string; phone: string; address: string; }
-export interface TransferItem { id: string | number; name: string; quantity: number; rate: number; unit: string; }
+export interface TransferItem { id: string | number; name: string; category?: string; company?: string; quantity: number; rate: number; unit: string; }
 
 export async function fetchEngineData(
   businessId: string,
@@ -25,13 +25,15 @@ export async function fetchEngineData(
   const [prodRes, catRes, compRes, partyRes] = await Promise.all([
     supabase.from('products').select('*').in('business_id', prodBizIds),
     supabase.from('categories').select('*'),
-    supabase.from('companies').select('*').eq('business_id', businessId),
+    supabase.from('companies').select('*').in('business_id', prodBizIds),
     partyTable === 'companies' ? Promise.resolve({ data: null }) : supabase.from(partyTable).select('*').eq('business_id', businessId),
   ]);
 
   const cats = catRes.data || [];
   const comps = compRes.data || [];
-  const rawParties = partyTable === 'companies' ? comps : (partyRes.data || []);
+  const rawParties = partyTable === 'companies'
+    ? comps.filter((c: any) => c.business_id === businessId)
+    : (partyRes.data || []);
 
   return {
     products: (prodRes.data || []).map((p: any) => ({
@@ -136,7 +138,7 @@ export default function TransactionEngine({
   const subTotal = cart.reduce((acc, item) => acc + ((Number(item.quantity) || 0) * (Number(item.rate) || 0)), 0);
   const discountVal = hasDiscount ? (Number(discountAmount) || 0) : 0;
   const deliveryVal = hasDelivery ? (Number(deliveryCharge) || 0) : 0;
-  const finalTotal = subTotal - discountVal + deliveryVal;
+  const finalTotal = Math.max(0, subTotal - discountVal);
   const dueAmount = finalTotal - (Number(cashReceived) || 0);
 
   const handleProceedToGatePass = () => {
@@ -174,7 +176,8 @@ export default function TransactionEngine({
         cashReceived: Number(cashReceived) || 0, 
         subTotal, 
         discountVal, 
-        deliveryVal, 
+        deliveryVal,
+        transportPaidBy: hasDelivery ? (mode === 'purchase' ? 'company' : 'depot') : 'receiver',
         finalTotal, 
         dueAmount, 
         remarks,
@@ -184,7 +187,7 @@ export default function TransactionEngine({
       });
       setIsSaving(false);
       setStep(1); setCart([]); setPartyId(''); setPartyName(''); setPartyPhone(''); setPartyAddress('');
-      setCashReceived(''); setRemarks(''); setHasDiscount(false); setHasDelivery(false);
+      setCashReceived(''); setRemarks(''); setHasDiscount(false); setHasDelivery(false); setDeliveryCharge(''); setDiscountAmount('');
       setBatch(''); setChallan(''); setReceiptImage(null);
       setIsGatePassReady(false);
     }, 1000);
@@ -219,10 +222,12 @@ export default function TransactionEngine({
       driverName: vDriverName,
       driverPhone: vDriverPhone,
       transportRent: deliveryVal,
-      deliveryCharge: deliveryVal,
+      deliveryCharge: 0,
       items: cart.map((item, idx) => ({
         id: String(item.id || idx),
         name: item.name,
+        category: item.category,
+        companyName: item.company,
         quantity: Number(item.quantity) || 0,
         unit: item.unit,
         unitPrice: Number(item.rate) || 0,
@@ -287,14 +292,17 @@ export default function TransactionEngine({
               {filteredProducts.map(prod => {
                 const cartItem = cart.find(c => c.id === prod.id);
                 return (
-                  <div key={prod.id} onClick={() => addToCart(prod)} className="relative bg-white p-1.5 rounded-lg border border-gray-300 shadow-sm flex items-center gap-2 cursor-pointer h-[68px]">
+                  <div key={prod.id} onClick={() => addToCart(prod)} className="relative bg-white p-1.5 rounded-lg border border-gray-300 shadow-sm flex items-center gap-2 cursor-pointer min-h-[72px]">
                     {cartItem && <div className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full border-2 border-white">{toBangla(cartItem.quantity)}</div>}
                     <div className="w-12 h-12 bg-gray-100 rounded flex items-center justify-center text-gray-400 shrink-0">
                       {prod.image_url ? <img src={prod.image_url} alt={prod.name} className="w-full h-full object-cover rounded" /> : <ShoppingBag size={20} />}
                     </div>
                     <div className="flex-1 min-w-0 flex flex-col justify-between h-full py-0.5">
-                      <h3 className="font-bold text-[11px] text-gray-800 line-clamp-2 leading-tight">{prod.name}</h3>
-                      <div className="flex justify-between items-end mt-0.5">
+                      <div>
+                        <h3 className="font-bold text-[11px] text-gray-800 line-clamp-1 leading-tight">{prod.name}</h3>
+                        <p className="text-[9px] font-bold text-[#0D3B80] truncate mt-0.5">{prod.company || 'সাধারণ'}</p>
+                      </div>
+                      <div className="flex justify-between items-end mt-1">
                         <span className="text-[9px] text-gray-500 font-bold">স্টক: {toBangla(prod.stockQty)}</span>
                         <span className="text-[11px] font-black text-[#1B5E20]">৳{toBangla(prod.rate)}</span>
                       </div>
@@ -318,8 +326,11 @@ export default function TransactionEngine({
                 <div key={idx} className="border-b border-gray-200 last:border-0 px-2 py-1.5">
                   <div className="grid grid-cols-[1fr_55px_65px_75px] gap-1 items-center">
                     <div className="flex items-center gap-1.5 min-w-0">
-                      <button onClick={() => removeFromCart(item.id)} className="text-red-500 p-1 bg-red-50 rounded"><Trash2 size={14}/></button>
-                      <p className="text-[11px] font-bold text-gray-800 truncate">{item.name}</p>
+                      <button onClick={() => removeFromCart(item.id)} className="text-red-500 p-1 bg-red-50 rounded shrink-0"><Trash2 size={14}/></button>
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-bold text-gray-800 truncate">{item.name}</p>
+                        {item.company && <p className="text-[9px] font-bold text-[#0D3B80] truncate">{item.company}</p>}
+                      </div>
                     </div>
                     <input type="number" value={item.quantity} onChange={(e) => updateQty(item.id, e.target.value)} className="w-full text-center border rounded py-1 text-[11px] font-bold" />
                     <input type="number" value={item.rate} onChange={(e) => updateRate(item.id, e.target.value)} className="w-full text-center border rounded py-1 text-[11px] font-bold text-[#0D3B80]" />
@@ -339,11 +350,24 @@ export default function TransactionEngine({
                   {hasDiscount && <input type="number" placeholder="পরিমাণ" value={discountAmount} onChange={e => setDiscountAmount(e.target.value)} className="mt-1.5 w-full border rounded p-2 text-sm" />}
                 </div>
                 <div className="bg-gray-50 p-2 rounded-lg border border-gray-200">
-                  <div className="flex justify-between items-center cursor-pointer" onClick={() => setHasDelivery(!hasDelivery)}>
-                    <span className="font-bold text-xs flex items-center gap-1">ডেলিভারি চার্জ <Truck size={12}/></span>
+                  <div className="flex justify-between items-center cursor-pointer" onClick={() => { setHasDelivery(!hasDelivery); if (hasDelivery) setDeliveryCharge(''); }}>
+                    <span className="font-bold text-xs flex items-center gap-1">
+                      {mode === 'purchase' ? 'কোম্পানি গাড়ি ভাড়া দিয়েছে?' : 'গাড়ি ভাড়া ডিপো দিচ্ছে?'} <Truck size={12}/>
+                    </span>
                     <div className={`w-10 h-5 rounded-full relative ${hasDelivery ? 'bg-[#1B5E20]' : 'bg-gray-300'}`}><div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-all ${hasDelivery ? 'translate-x-5' : 'translate-x-0.5'}`}></div></div>
                   </div>
-                  {hasDelivery && <input type="number" placeholder="পরিমাণ" value={deliveryCharge} onChange={e => setDeliveryCharge(e.target.value)} className="mt-1.5 w-full border rounded p-2 text-sm" />}
+                  {hasDelivery ? (
+                    <div className="mt-1.5">
+                      <input type="number" placeholder="গাড়ি ভাড়ার পরিমাণ (৳)" value={deliveryCharge} onChange={e => setDeliveryCharge(e.target.value)} className="w-full border rounded p-2 text-sm" />
+                      <p className="text-[10px] text-gray-500 mt-1">
+                        {mode === 'purchase'
+                          ? '* এই টাকা ডিপোর ক্যাশে জমা হবে (পণ্যের বিলে যোগ হবে না)।'
+                          : '* শুধু পরিবহন তথ্যে দেখাবে ও ডিপোর ক্যাশ/খরচে যাবে (ক্রেতার বিলে যোগ হবে না)।'}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-gray-400 mt-1">বন্ধ থাকলে: যে মাল নিচ্ছে সে নিজেই গাড়ি ভাড়া দিবে (রিসিপ্টে দেখাবে না)।</p>
+                  )}
                 </div>
               </div>
               <div className="flex justify-between font-black text-lg text-[#0D3B80] mt-2 border-t pt-2"><span>সর্বমোট</span><span>৳ {toBangla(finalTotal)}</span></div>

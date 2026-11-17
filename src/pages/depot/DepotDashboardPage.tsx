@@ -4,7 +4,7 @@ import {
   Warehouse, HandCoins, Building2, 
   Boxes, Handshake, Truck, ArrowRightLeft, ReceiptText, Banknote, Gift, BarChart3,
   Loader2, History, KeyRound, Recycle,
-  LayoutDashboard, BookOpenText, PackageSearch, LayoutGrid, ShoppingBag
+  LayoutDashboard, BookOpenText, PackageSearch, LayoutGrid, ShoppingBag, WalletCards
 } from 'lucide-react';
 import { toBangla } from '../../lib/utils';
 import { useAppContext } from '../../context/AppContext';
@@ -215,6 +215,7 @@ export default function DepotDashboardPage({ onNavigate, onToggleMode }: Props) 
             
             <DepotModuleButton title="বিক্রি" icon={ReceiptText} color="#2E7D32" onClick={() => onNavigate('sale')} />
             <DepotModuleButton title="খরচ" icon={Banknote} color="#D32F2F" onClick={() => onNavigate('expense_khata')} />
+            <DepotModuleButton title="ক্যাশবক্স" icon={WalletCards} color="#059669" onClick={() => onNavigate('cashbox')} />
             <DepotModuleButton title="বোনাস" icon={Gift} color="#E65100" onClick={() => onNavigate('bonus')} />
             <DepotModuleButton title="রিপোর্টস" icon={BarChart3} color="#00796B" onClick={() => onNavigate('reports')} />
             

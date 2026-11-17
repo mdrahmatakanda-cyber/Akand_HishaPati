@@ -51,6 +51,7 @@ export default function TransactionDetailsPage({ onBack, type = 'purchase', tran
       id: String(i.id || idx),
       name: i.name || i.products?.name || 'পণ্য',
       category: i.category || i.products?.categories?.name || 'সাধারণ',
+      companyName: i.companyName || i.products?.companies?.name || '',
       quantity: Number(i.qty ?? i.quantity ?? 0),
       unit: i.unit || i.products?.unit || 'পিস',
       unitPrice: Number(i.rate ?? 0),
@@ -58,7 +59,7 @@ export default function TransactionDetailsPage({ onBack, type = 'purchase', tran
     }));
     const totalQty = items.reduce((a: number, c: any) => a + c.quantity, 0);
     const totalBags = items.filter((i: any) => i.unit?.includes('বস্তা')).reduce((a: number, c: any) => a + c.quantity, 0);
-    const subtotal = Number(mapped.amount) + Number(mapped.discount || 0) - Number(mapped.deliveryCharge || 0);
+    const subtotal = Number(mapped.amount) + Number(mapped.discount || 0);
     const paid = Number(mapped.paidAmount ?? mapped.amount ?? 0);
 
     return {
@@ -121,7 +122,7 @@ export default function TransactionDetailsPage({ onBack, type = 'purchase', tran
           partyBalance: 0,
           note: 'ডেমো নোট',
           items: [
-            { id: 'd1', productId: 'p1', name: type === 'purchase' ? 'স্টার্টার ফিড (৫০ কেজি)' : 'গ্রোয়ার ফিড', qty: 10, rate: type === 'purchase' ? 5000 : 500, unit: 'বস্তা', stockQty: 100, image_url: '' }
+            { id: 'd1', productId: 'p1', name: type === 'purchase' ? 'স্টার্টার ফিড (৫০ কেজি)' : 'গ্রোয়ার ফিড', companyName: 'নিউজা', qty: 10, rate: type === 'purchase' ? 5000 : 500, unit: 'বস্তা', stockQty: 100, image_url: '' }
           ]
         };
         setData(demoData);
@@ -134,7 +135,7 @@ export default function TransactionDetailsPage({ onBack, type = 'purchase', tran
 
         const { data: dbData, error } = await supabase
           .from(table)
-          .select(`*, ${partyCol}, ${itemsTable}(id, product_id, quantity, rate, total, products(id, name, image_url, unit, stock_quantity, categories(name)))`)
+          .select(`*, ${partyCol}, ${itemsTable}(id, product_id, quantity, rate, total, products(id, name, image_url, unit, stock_quantity, categories(name), companies(name)))`)
           .eq('id', transactionId)
           .single();
 
@@ -170,6 +171,7 @@ export default function TransactionDetailsPage({ onBack, type = 'purchase', tran
               id: i.id,
               productId: i.product_id || i.products?.id || '',
               name: i.products?.name || 'পণ্য নেই',
+              companyName: i.products?.companies?.name || '',
               qty: Number(i.quantity),
               rate: Number(i.rate),
               unit: i.products?.unit || 'পিস',
@@ -470,7 +472,10 @@ export default function TransactionDetailsPage({ onBack, type = 'purchase', tran
                     <ImageIcon size={14} className="text-gray-400" />
                   )}
                 </div>
-                <span className="font-bold text-sm">{item.name}</span>
+                <div>
+                  <span className="font-bold text-sm block leading-tight">{item.name}</span>
+                  {item.companyName && <span className="text-[10px] font-bold text-[#1E88E5]">{item.companyName}</span>}
+                </div>
               </div>
               <div className="flex items-center gap-4 text-sm font-bold">
                 <span className="text-gray-500">X{toBangla(item.qty)}</span>

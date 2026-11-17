@@ -62,6 +62,19 @@ export default function DepotStockInPage({ onBack }: Props) {
         showAppToast("সেভ করতে সমস্যা: " + error.message, 'error');
         throw error;
       }
+
+      if (data.transportPaidBy === 'company' && Number(data.deliveryVal) > 0 && activeBusiness?.id) {
+        await supabase.from('cashbox_transactions').insert([{
+          business_id: activeBusiness.id,
+          is_depot: true,
+          tx_type: 'transport_in',
+          title: 'কোম্পানি থেকে প্রাপ্ত গাড়ি ভাড়া',
+          amount: Number(data.deliveryVal),
+          is_income: true,
+          note: data.remarks || 'স্টক-ইন পরিবহন ভাড়া',
+          tx_date: new Date().toISOString().split('T')[0]
+        }]);
+      }
     }
     showAppToast('স্টক ইন সফলভাবে সম্পন্ন হয়েছে!', 'success');
     onBack();

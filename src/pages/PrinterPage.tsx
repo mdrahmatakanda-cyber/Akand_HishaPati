@@ -153,16 +153,16 @@ export default function PrinterPage({ onBack }: Props) {
       items: isExp
         ? [{ id: '1', name: 'গুদাম ভাড়া (মাসিক)', quantity: 1, unit: 'মাস', unitPrice: 15000, totalPrice: 15000 }]
         : [
-            { id: '1', name: 'ব্রয়লার স্টার্টার ফিড (৫০ কেজি)', category: 'ফিড', quantity: 20, unit: 'বস্তা', unitPrice: 2800, totalPrice: 56000 },
-            { id: '2', name: 'লেয়ার লে-১ ফিড (৫০ কেজি)', category: 'ফিড', quantity: 10, unit: 'বস্তা', unitPrice: 2600, totalPrice: 26000 },
+            { id: '1', name: 'ব্রয়লার স্টার্টার ফিড (৫০ কেজি)', category: 'ফিড', companyName: 'নিউজা', quantity: 20, unit: 'বস্তা', unitPrice: 2800, totalPrice: 56000 },
+            { id: '2', name: 'লেয়ার লে-১ ফিড (৫০ কেজি)', category: 'ফিড', companyName: 'প্যারাগন', quantity: 10, unit: 'বস্তা', unitPrice: 2600, totalPrice: 26000 },
           ],
       totalBags: isExp ? 0 : 30,
       totalPieces: 0,
       subtotal: isExp ? 15000 : 82000,
       discount: 0,
-      grandTotal: isExp ? 15000 : 83200,
+      grandTotal: isExp ? 15000 : 82000,
       paidAmount: isExp ? 15000 : 50000,
-      dueAmount: isExp ? 0 : 33200,
+      dueAmount: isExp ? 0 : 32000,
       previousDue: 12000,
       paidInWords: isExp ? 'পনেরো হাজার টাকা মাত্র' : 'পঞ্চাশ হাজার টাকা মাত্র',
       note: 'নমুনা রিসিপ্ট প্রিভিউ',

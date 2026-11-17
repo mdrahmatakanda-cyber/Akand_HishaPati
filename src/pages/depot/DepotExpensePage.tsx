@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { 
-  ArrowLeft, FileText, HelpCircle, Plus, Loader2, X, 
+import {
+  ArrowLeft, FileText, HelpCircle, Plus, Loader2, X, Edit3,
   Banknote, CalendarDays, Search, Image as ImageIcon, Trash2, ExternalLink
 } from 'lucide-react';
 import { toBangla, numberToWordsBn } from '../../lib/utils';
@@ -8,23 +8,19 @@ import { useAppContext } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { demoDepotExpenses, demoEmployeesList } from '../../lib/demoData';
-import PremiumToast from '../../components/PremiumToast';
+import { showAppToast } from '../../components/PremiumToast';
 import { ReceiptModal, type ReceiptData } from '../ReceiptModal';
 import { uploadImageToSupabase, uploadPdfToUpstash, getUpstashFileUrl } from '../../lib/upload';
 
 interface Props {
   onBack: () => void;
-  onNavigate: (screen: string) => void;
+  onNavigate?: (screen: string) => void;
 }
 
 export default function DepotExpensePage({ onBack }: Props) {
   const { isDemoMode } = useAppContext();
   const { activeBusiness, user } = useAuth();
-
   const preparedByName = user?.user_metadata?.name || user?.email || 'ইউজার';
-
-  const [toast, setToast] = useState<{ show: boolean, message: string, type: 'success' | 'error' }>({ show: false, message: '', type: 'success' });
-  const showToast = (message: string, type: 'success' | 'error' = 'success') => setToast({ show: true, message, type });
 
   const [expenses, setExpenses] = useState<any[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
@@ -32,7 +28,7 @@ export default function DepotExpensePage({ onBack }: Props) {
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [loadingDocKey, setLoadingDocKey] = useState<string | null>(null);
-  
+
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState('month');
   const [isCustomDateOpen, setIsCustomDateOpen] = useState(false);
@@ -42,41 +38,45 @@ export default function DepotExpensePage({ onBack }: Props) {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
-    expense_type: 'সাধারণ', for_whom: '', employee_id: '', 
+    expense_type: 'সাধারণ', for_whom: '', employee_id: '',
     amount: '', note: '', date: new Date().toISOString().split('T')[0]
   });
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // গ্লোবাল রিসিপ্ট স্টেট
   const [isGlobalReceiptOpen, setIsGlobalReceiptOpen] = useState(false);
   const [globalReceiptData, setGlobalReceiptData] = useState<ReceiptData | null>(null);
-  
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const fetchExpenses = async () => {
     setIsLoading(true);
     try {
       if (isDemoMode) {
-        setExpenses(demoDepotExpenses);
+        setExpenses(demoDepotExpenses.map((e: any) => ({ ...e, rawDate: e.rawDate || new Date(e.date).getTime() || Date.now() })));
         setEmployees(demoEmployeesList);
-      } else {
-        if (!activeBusiness?.id) return;
+      } else if (activeBusiness?.id) {
         const [expRes, empRes] = await Promise.all([
-          supabase.from('expenses').select('*').eq('business_id', activeBusiness.id).order('date', { ascending: false }),
+          supabase.from('expenses').select('*').eq('business_id', activeBusiness.id).eq('is_depot', true).is('deleted_at', null).order('date', { ascending: false }),
           supabase.from('employees').select('*').eq('business_id', activeBusiness.id).is('deleted_at', null)
         ]);
 
+        if (expRes.error) throw expRes.error;
+        if (empRes.data) setEmployees(empRes.data);
         if (expRes.data) {
+          const empList = empRes.data || [];
           setExpenses(expRes.data.map((e: any) => {
             const d = new Date(e.date);
-            return { ...e, date: d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }), rawDate: d.getTime() };
+            return {
+              ...e,
+              employee_name: empList.find((emp: any) => emp.id === e.employee_id)?.name || '',
+              date: d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+              rawDate: d.getTime()
+            };
           }));
         }
-        if (empRes.data) setEmployees(empRes.data);
       }
-    } catch (error) {
-      console.error(error);
+    } catch (error: any) {
+      showAppToast('খরচ লোড করতে সমস্যা: ' + error.message, 'error');
     } finally {
       setIsLoading(false);
     }
@@ -86,25 +86,28 @@ export default function DepotExpensePage({ onBack }: Props) {
 
   const filteredList = useMemo(() => {
     return expenses.filter(item => {
-      const matchSearch = (item.expense_type && item.expense_type.toLowerCase().includes(searchQuery.toLowerCase())) ||
-                          (item.for_whom && item.for_whom.toLowerCase().includes(searchQuery.toLowerCase())) ||
-                          (item.note && item.note.toLowerCase().includes(searchQuery.toLowerCase()));
-      
+      const q = searchQuery.toLowerCase();
+      const matchSearch = !q ||
+        (item.expense_type && item.expense_type.toLowerCase().includes(q)) ||
+        (item.for_whom && item.for_whom.toLowerCase().includes(q)) ||
+        (item.note && item.note.toLowerCase().includes(q));
+
       let matchDate = true;
-      const now = new Date().getTime();
+      const now = Date.now();
       const oneDay = 24 * 60 * 60 * 1000;
-      
-      if (activeFilter === 'day') matchDate = item.rawDate >= now - oneDay;
-      else if (activeFilter === 'month') matchDate = item.rawDate >= now - (30 * oneDay);
-      else if (activeFilter === 'year') matchDate = item.rawDate >= now - (365 * oneDay);
+      const raw = item.rawDate || now;
+
+      if (activeFilter === 'day') matchDate = raw >= now - oneDay;
+      else if (activeFilter === 'month') matchDate = raw >= now - 30 * oneDay;
+      else if (activeFilter === 'year') matchDate = raw >= now - 365 * oneDay;
       else if (activeFilter === 'custom' && startDate && endDate) {
-        matchDate = item.rawDate >= new Date(startDate).getTime() && item.rawDate <= new Date(endDate).getTime() + oneDay;
+        matchDate = raw >= new Date(startDate).getTime() && raw <= new Date(endDate).getTime() + oneDay;
       }
       return matchSearch && matchDate;
     });
   }, [expenses, searchQuery, activeFilter, startDate, endDate]);
 
-  const totalExpense = filteredList.reduce((acc, curr) => acc + Number(curr.amount), 0);
+  const totalExpense = filteredList.reduce((acc, curr) => acc + Number(curr.amount || 0), 0);
 
   const openForm = (expense: any = null) => {
     if (expense) {
@@ -115,7 +118,7 @@ export default function DepotExpensePage({ onBack }: Props) {
         employee_id: expense.employee_id || '',
         amount: expense.amount?.toString() || '',
         note: expense.note || '',
-        date: expense.date ? new Date(expense.rawDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
+        date: expense.rawDate ? new Date(expense.rawDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
       });
     } else {
       setEditingId(null);
@@ -125,7 +128,6 @@ export default function DepotExpensePage({ onBack }: Props) {
     setIsFormOpen(true);
   };
 
-  // ✅ রিসিপ্ট দেখার ফাংশন
   const handleViewReceipt = async (fileUrlOrKey: string) => {
     try {
       if (fileUrlOrKey.startsWith('http')) {
@@ -134,27 +136,27 @@ export default function DepotExpensePage({ onBack }: Props) {
         setLoadingDocKey(fileUrlOrKey);
         const url = await getUpstashFileUrl(fileUrlOrKey);
         window.open(url, '_blank');
-        setLoadingDocKey(null);
       }
     } catch (error: any) {
-      showToast('রিসিপ্ট দেখতে সমস্যা হয়েছে: ' + error.message, 'error');
+      showAppToast('রিসিপ্ট দেখতে সমস্যা হয়েছে: ' + error.message, 'error');
+    } finally {
       setLoadingDocKey(null);
     }
   };
 
   const handleSaveExpense = async () => {
-    if (!formData.expense_type || !formData.amount) return showToast('ক্যাটাগরি এবং পরিমাণ আবশ্যক', 'error');
+    if (!formData.expense_type || !formData.amount || Number(formData.amount) <= 0) {
+      return showAppToast('সঠিক ক্যাটাগরি এবং টাকার পরিমাণ দিন', 'error');
+    }
     setIsSaving(true);
     try {
       const amountNum = Number(formData.amount);
       const formattedDate = new Date(formData.date);
       const empName = employees.find(e => e.id === formData.employee_id)?.name || '';
-      
       let uploadedUrl = editingId ? (expenses.find(e => e.id === editingId)?.receipt_url || '') : '';
 
       if (!isDemoMode && activeBusiness?.id) {
         if (receiptFile) {
-          // ✅ ছবি বা পিডিএফ চেক করে আপলোড
           if (receiptFile.type === 'application/pdf') {
             const { fileKey } = await uploadPdfToUpstash(receiptFile);
             uploadedUrl = fileKey;
@@ -162,9 +164,10 @@ export default function DepotExpensePage({ onBack }: Props) {
             uploadedUrl = await uploadImageToSupabase(receiptFile, 'expenses');
           }
         }
-        
+
         const payload = {
           business_id: activeBusiness.id,
+          is_depot: true,
           expense_type: formData.expense_type,
           for_whom: formData.for_whom,
           employee_id: formData.employee_id || null,
@@ -174,34 +177,35 @@ export default function DepotExpensePage({ onBack }: Props) {
           date: formData.date
         };
 
-        if (editingId) {
-          const { error } = await supabase.from('expenses').update(payload).eq('id', editingId);
-          if (error) throw error;
-        } else {
-          const { error } = await supabase.from('expenses').insert([payload]);
-          if (error) throw error;
-        }
-      }
-
-      const newItem = {
-        id: editingId || Date.now().toString(),
-        expense_type: formData.expense_type, for_whom: formData.for_whom, employee_name: empName, amount: amountNum,
-        note: formData.note, receipt_url: receiptFile ? (receiptFile.type === 'application/pdf' ? 'dummy-pdf-key' : URL.createObjectURL(receiptFile)) : uploadedUrl,
-        date: formattedDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }), rawDate: formattedDate.getTime()
-      };
-      
-      if (editingId) {
-        setExpenses(expenses.map(e => e.id === editingId ? newItem : e).sort((a, b) => b.rawDate - a.rawDate));
+        const { error } = editingId
+          ? await supabase.from('expenses').update(payload).eq('id', editingId)
+          : await supabase.from('expenses').insert([payload]);
+        if (error) throw error;
+        await fetchExpenses();
       } else {
-        setExpenses([newItem, ...expenses].sort((a, b) => b.rawDate - a.rawDate));
+        const newItem = {
+          id: editingId || Date.now().toString(),
+          expense_type: formData.expense_type,
+          for_whom: formData.for_whom,
+          employee_id: formData.employee_id,
+          employee_name: empName,
+          amount: amountNum,
+          note: formData.note,
+          receipt_url: receiptFile ? URL.createObjectURL(receiptFile) : uploadedUrl,
+          date: formattedDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+          rawDate: formattedDate.getTime()
+        };
+        setExpenses(prev =>
+          editingId
+            ? prev.map(e => e.id === editingId ? newItem : e).sort((a, b) => b.rawDate - a.rawDate)
+            : [newItem, ...prev].sort((a, b) => b.rawDate - a.rawDate)
+        );
       }
 
-      if (!isDemoMode) fetchExpenses();
-      
       setIsFormOpen(false);
-      showToast(editingId ? 'খরচ আপডেট হয়েছে!' : 'খরচ সফলভাবে যোগ হয়েছে!', 'success');
+      showAppToast(editingId ? 'খরচ আপডেট হয়েছে!' : 'খরচ সফলভাবে যোগ হয়েছে!', 'success');
     } catch (error: any) {
-      showToast("সমস্যা: " + error.message, 'error');
+      showAppToast("সমস্যা: " + error.message, 'error');
     } finally {
       setIsSaving(false);
     }
@@ -209,13 +213,14 @@ export default function DepotExpensePage({ onBack }: Props) {
 
   const handleOpenGlobalReceipt = (expense: any) => {
     const receipt: ReceiptData = {
-      invoiceNo: `EXP-${expense.id.slice(-6).toUpperCase()}`,
+      type: 'expense',
+      invoiceNo: `EXP-${String(expense.id).slice(-5).toUpperCase()}`,
       date: expense.date,
-      status: 'Paid',
+      status: 'পরিশোধিত',
       shopName: activeBusiness?.name || 'DREAM AGRO',
-      shopAddress: (activeBusiness as any)?.address || 'N/A',
-      shopPhone: (activeBusiness as any)?.phone || 'N/A',
-      shopEmail: (activeBusiness as any)?.email || 'N/A',
+      shopAddress: (activeBusiness as any)?.address || '',
+      shopPhone: (activeBusiness as any)?.phone || '',
+      shopEmail: (activeBusiness as any)?.email || '',
       customerName: expense.for_whom || 'সাধারণ খরচ',
       proprietor: 'N/A',
       customerPhone: 'N/A',
@@ -230,18 +235,15 @@ export default function DepotExpensePage({ onBack }: Props) {
       driverPhone: 'N/A',
       transportRent: 0,
       items: [{
-        id: '1', name: expense.expense_type, category: 'খরচ',
+        id: '1', name: expense.expense_type, category: 'ডিপো খরচ',
         quantity: 1, unit: 'টি', unitPrice: Number(expense.amount), totalPrice: Number(expense.amount)
       }],
       totalBags: 0, totalPieces: 1, subtotal: Number(expense.amount),
       discount: 0, grandTotal: Number(expense.amount),
       paidAmount: Number(expense.amount), dueAmount: 0,
       paidInWords: numberToWordsBn(Number(expense.amount)),
-      shopDescription: 'ডিপো খরচের রিসিপ্ট', tableNote: '',
-      footerText1: 'ধন্যবাদ!', footerText2: 'Powered by Hishabpati',
-      note: expense.note || '', type: 'expense'
+      note: expense.note || ''
     };
-
     setGlobalReceiptData(receipt);
     setIsGlobalReceiptOpen(true);
   };
@@ -255,10 +257,10 @@ export default function DepotExpensePage({ onBack }: Props) {
         if (error) throw error;
       }
       setExpenses(prev => prev.filter(e => e.id !== deleteConfirmId));
-      showToast('খরচ সফলভাবে ডিলিট হয়েছে!', 'success');
+      showAppToast('খরচ সফলভাবে ডিলিট হয়েছে!', 'success');
       setDeleteConfirmId(null);
     } catch (error: any) {
-      showToast('সমস্যা: ' + error.message, 'error');
+      showAppToast('সমস্যা: ' + error.message, 'error');
     } finally {
       setIsDeleting(false);
     }
@@ -266,8 +268,6 @@ export default function DepotExpensePage({ onBack }: Props) {
 
   return (
     <div className="h-[100dvh] bg-da-depotBg text-da-textDark font-serif flex flex-col overflow-hidden w-full">
-      <PremiumToast show={toast.show} message={toast.message} type={toast.type} onClose={() => setToast({ show: false, message: '', type: 'success' })} />
-
       <header className="bg-da-depotNavy text-white shadow-md shrink-0 z-40">
         <div className="px-3 py-2.5 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -276,15 +276,15 @@ export default function DepotExpensePage({ onBack }: Props) {
           </div>
           <div className="flex gap-2">
             <button onClick={() => window.print()} className="p-1.5 bg-white/10 rounded-lg hover:bg-white/20 transition"><FileText size={18} /></button>
-            <button className="p-1.5 bg-white/10 rounded-lg hover:bg-white/20 transition"><HelpCircle size={18} /></button>
+            <button onClick={() => showAppToast('খরচের কার্ডে ট্যাপ করলে রিসিপ্ট ও প্রিন্ট অপশন পাবেন!', 'success')} className="p-1.5 bg-white/10 rounded-lg hover:bg-white/20 transition"><HelpCircle size={18} /></button>
           </div>
         </div>
       </header>
 
       <main className="flex-1 overflow-y-auto p-2.5 flex flex-col gap-2.5 pb-24">
         <div className="bg-gradient-to-br from-da-depotNavy to-da-depotBlue rounded-xl p-4 shadow-lg flex flex-col items-center justify-center text-white shrink-0">
-          <span className="text-sm font-bold text-blue-100 mb-1">সর্বমোট খরচ</span>
-          {isLoading ? <Loader2 className="animate-spin text-white mt-1" size={28}/> : <span className="font-black text-3xl">৳ {toBangla(totalExpense)}</span>}
+          <span className="text-sm font-bold text-blue-100 mb-1">সর্বমোট ডিপো খরচ</span>
+          {isLoading ? <Loader2 className="animate-spin text-white mt-1" size={28} /> : <span className="font-black text-3xl">৳ {toBangla(totalExpense)}</span>}
         </div>
 
         <div className="flex gap-1.5 overflow-x-auto scrollbar-hide py-1 flex-nowrap shrink-0">
@@ -304,7 +304,7 @@ export default function DepotExpensePage({ onBack }: Props) {
         </div>
 
         {isLoading ? (
-          <div className="flex justify-center items-center mt-10"><Loader2 className="animate-spin text-da-depotBlue" size={32}/></div>
+          <div className="flex justify-center items-center mt-10"><Loader2 className="animate-spin text-da-depotBlue" size={32} /></div>
         ) : filteredList.length > 0 ? (
           <div className="flex flex-col gap-1.5 mt-1">
             {filteredList.map((item) => (
@@ -314,28 +314,20 @@ export default function DepotExpensePage({ onBack }: Props) {
                     <div className="w-8 h-8 bg-da-depotBg rounded-lg flex items-center justify-center text-da-depotBlue shrink-0"><Banknote size={16} /></div>
                     <div className="min-w-0">
                       <h3 className="font-bold text-[13px] text-da-textDark truncate">{item.expense_type}</h3>
-                      <p className="text-[10px] text-da-textMuted mt-0.5">{item.date} • {item.note || 'নোট নেই'}</p>
+                      <p className="text-[10px] text-da-textMuted mt-0.5 truncate">{item.date} • {item.note || 'নোট নেই'}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0 pl-2">
-                    <p className="font-black text-[14px] text-da-red">৳{toBangla(item.amount)}</p>
-                    
-                    {/* ✅ রিসিপ্ট দেখার বাটন */}
+                  <div className="flex items-center gap-1 shrink-0 pl-2">
+                    <p className="font-black text-[14px] text-da-red mr-1">৳{toBangla(item.amount)}</p>
                     {item.receipt_url && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleViewReceipt(item.receipt_url); }}
-                        disabled={loadingDocKey === item.receipt_url}
-                        className="p-1 text-da-depotBlue hover:text-da-green active:scale-90 transition"
-                        title="রিসিপ্ট দেখুন"
-                      >
+                      <button onClick={(e) => { e.stopPropagation(); handleViewReceipt(item.receipt_url); }} disabled={loadingDocKey === item.receipt_url} className="p-1 text-da-depotBlue hover:text-da-green" title="ফাইল দেখুন">
                         {loadingDocKey === item.receipt_url ? <Loader2 size={14} className="animate-spin" /> : <ExternalLink size={14} />}
                       </button>
                     )}
-
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setDeleteConfirmId(item.id); }}
-                      className="p-1 text-da-textMuted hover:text-da-red active:scale-90 transition"
-                    >
+                    <button onClick={(e) => { e.stopPropagation(); openForm(item); }} className="p-1 text-da-depotBlue hover:bg-blue-50 rounded" title="এডিট">
+                      <Edit3 size={14} />
+                    </button>
+                    <button onClick={(e) => { e.stopPropagation(); setDeleteConfirmId(item.id); }} className="p-1 text-da-textMuted hover:text-da-red" title="ডিলিট">
                       <Trash2 size={14} />
                     </button>
                   </div>
@@ -355,70 +347,64 @@ export default function DepotExpensePage({ onBack }: Props) {
       </main>
 
       <div className="fixed bottom-0 left-0 w-full bg-white border-t border-da-cardBorder p-2.5 z-50">
-        <button onClick={() => openForm()} className="w-full bg-da-depotBlue text-white py-3 rounded-xl font-bold shadow-blue-soft flex justify-center items-center gap-2 active:scale-95 transition"><Plus size={18}/> নতুন খরচ যোগ করুন</button>
+        <button onClick={() => openForm()} className="w-full bg-da-depotBlue text-white py-3 rounded-xl font-bold shadow-blue-soft flex justify-center items-center gap-2 active:scale-95 transition"><Plus size={18} /> নতুন খরচ যোগ করুন</button>
       </div>
 
       {isFormOpen && (
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200 max-h-[90dvh] flex flex-col">
+          <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl max-h-[90dvh] flex flex-col">
             <div className="bg-da-depotNavy p-3 flex justify-between items-center text-white shrink-0">
               <h2 className="font-bold text-sm">{editingId ? 'খরচ এডিট করুন' : 'নতুন খরচ যোগ করুন'}</h2>
-              <button onClick={() => setIsFormOpen(false)} className="p-1 bg-white/20 rounded-full"><X size={16}/></button>
+              <button onClick={() => setIsFormOpen(false)} className="p-1 bg-white/20 rounded-full"><X size={16} /></button>
             </div>
-            
             <div className="p-4 flex flex-col gap-3 overflow-y-auto">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[11px] font-bold text-da-textMuted mb-1 block">টাকার পরিমাণ <span className="text-da-red">*</span></label>
-                  <input type="number" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2.5 text-lg font-bold text-da-depotBlue outline-none focus:border-da-depotBlue bg-da-depotBg/50" placeholder="৳ 0" />
+                  <label className="text-[11px] font-bold text-da-textMuted mb-1 block">টাকার পরিমাণ *</label>
+                  <input type="number" value={formData.amount} onChange={e => setFormData({ ...formData, amount: e.target.value })} className="w-full border border-da-cardBorder rounded-lg p-2.5 text-lg font-bold text-da-depotBlue outline-none focus:border-da-depotBlue bg-da-depotBg/50" placeholder="৳ 0" />
                 </div>
                 <div>
                   <label className="text-[11px] font-bold text-da-textMuted mb-1 block">তারিখ</label>
-                  <input type="date" value={formData.date} onChange={e => setFormData({...formData, date: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2.5 text-sm outline-none focus:border-da-depotBlue" />
+                  <input type="date" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })} className="w-full border border-da-cardBorder rounded-lg p-2.5 text-sm outline-none focus:border-da-depotBlue" />
                 </div>
               </div>
-
               <div>
-                <label className="text-[11px] font-bold text-da-textMuted mb-1 block">ক্যাটাগরি <span className="text-da-red">*</span></label>
-                <select value={formData.expense_type} onChange={e => setFormData({...formData, expense_type: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2.5 text-sm outline-none focus:border-da-depotBlue">
+                <label className="text-[11px] font-bold text-da-textMuted mb-1 block">ক্যাটাগরি *</label>
+                <select value={formData.expense_type} onChange={e => setFormData({ ...formData, expense_type: e.target.value })} className="w-full border border-da-cardBorder rounded-lg p-2.5 text-sm outline-none focus:border-da-depotBlue">
                   <option>সাধারণ</option><option>গোডাউন ভাড়া</option><option>ম্যানেজার বেতন</option>
                   <option>পরিবহন খরচ</option><option>বিদ্যুৎ বিল</option><option>অন্যান্য</option>
-                  {formData.expense_type && !['সাধারণ','গোডাউন ভাড়া','ম্যানেজার বেতন','পরিবহন খরচ','বিদ্যুৎ বিল','অন্যান্য'].includes(formData.expense_type) && <option>{formData.expense_type}</option>}
+                  {formData.expense_type && !['সাধারণ', 'গোডাউন ভাড়া', 'ম্যানেজার বেতন', 'পরিবহন খরচ', 'বিদ্যুৎ বিল', 'অন্যান্য'].includes(formData.expense_type) && <option>{formData.expense_type}</option>}
                 </select>
               </div>
-
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-[11px] font-bold text-da-textMuted mb-1 block">প্রাপক</label>
-                  <input type="text" value={formData.for_whom} onChange={e => setFormData({...formData, for_whom: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" placeholder="যেমন: ড্রাইভার" />
+                  <input type="text" value={formData.for_whom} onChange={e => setFormData({ ...formData, for_whom: e.target.value })} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" placeholder="যেমন: ড্রাইভার" />
                 </div>
                 <div>
                   <label className="text-[11px] font-bold text-da-textMuted mb-1 block">এন্ট্রি করেছেন</label>
-                  <select value={formData.employee_id} onChange={e => setFormData({...formData, employee_id: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue">
+                  <select value={formData.employee_id} onChange={e => setFormData({ ...formData, employee_id: e.target.value })} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue">
                     <option value="">সিলেক্ট করুন</option>
                     {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                   </select>
                 </div>
               </div>
-
               <div>
                 <label className="text-[11px] font-bold text-da-textMuted mb-1 block">নোট</label>
-                <input type="text" value={formData.note} onChange={e => setFormData({...formData, note: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" placeholder="বিস্তারিত লিখুন..." />
+                <input type="text" value={formData.note} onChange={e => setFormData({ ...formData, note: e.target.value })} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" placeholder="বিস্তারিত লিখুন..." />
               </div>
-
               <div>
-                <button onClick={() => fileInputRef.current?.click()} className="w-full border border-dashed border-da-cardBorder rounded-lg p-2 flex items-center justify-center gap-2 text-da-textMuted hover:bg-da-depotBg transition">
+                <button type="button" onClick={() => fileInputRef.current?.click()} className="w-full border border-dashed border-da-cardBorder rounded-lg p-2 flex items-center justify-center gap-2 text-da-textMuted hover:bg-da-depotBg transition">
                   <ImageIcon size={16} className={receiptFile ? 'text-da-green' : ''} />
                   <span className="text-[11px] font-bold truncate max-w-[200px]">{receiptFile ? receiptFile.name : 'রিসিপ্টের ছবি বা PDF আপলোড করুন'}</span>
                 </button>
                 <input type="file" ref={fileInputRef} onChange={e => setReceiptFile(e.target.files?.[0] || null)} accept="image/*,.pdf" className="hidden" />
               </div>
             </div>
-
             <div className="p-3 border-t border-da-cardBorder bg-da-depotBg flex gap-2 shrink-0">
               <button onClick={() => setIsFormOpen(false)} className="flex-1 bg-white border border-da-cardBorder text-da-textMuted py-2 rounded-xl font-bold">বাতিল</button>
               <button onClick={handleSaveExpense} disabled={isSaving} className="flex-1 bg-da-depotBlue text-white py-2 rounded-xl font-bold shadow-md flex justify-center items-center">
-                {isSaving ? <Loader2 size={16} className="animate-spin"/> : 'সেভ করুন'}
+                {isSaving ? <Loader2 size={16} className="animate-spin" /> : 'সেভ করুন'}
               </button>
             </div>
           </div>
@@ -427,18 +413,18 @@ export default function DepotExpensePage({ onBack }: Props) {
 
       {isCustomDateOpen && (
         <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl w-full max-w-xs overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+          <div className="bg-white rounded-2xl w-full max-w-xs overflow-hidden shadow-2xl">
             <div className="bg-da-depotNavy p-3 flex justify-between items-center text-white">
-              <h2 className="font-bold text-sm flex items-center gap-2"><CalendarDays size={16}/> তারিখ নির্বাচন</h2>
-              <button onClick={() => setIsCustomDateOpen(false)} className="p-1 bg-white/20 rounded-full"><X size={16}/></button>
+              <h2 className="font-bold text-sm flex items-center gap-2"><CalendarDays size={16} /> তারিখ নির্বাচন</h2>
+              <button onClick={() => setIsCustomDateOpen(false)} className="p-1 bg-white/20 rounded-full"><X size={16} /></button>
             </div>
             <div className="p-4 flex flex-col gap-3">
-              <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">শুরুর তারিখ</label><input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
-              <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">শেষ তারিখ</label><input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
+              <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">শুরুর তারিখ</label><input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm" /></div>
+              <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">শেষ তারিখ</label><input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm" /></div>
             </div>
             <div className="p-3 border-t border-da-cardBorder bg-da-depotBg flex gap-2">
               <button onClick={() => setIsCustomDateOpen(false)} className="flex-1 bg-white border border-da-cardBorder text-da-textMuted py-2 rounded-xl font-bold">বাতিল</button>
-              <button onClick={() => { if(startDate && endDate){ setActiveFilter('custom'); setIsCustomDateOpen(false); } }} className="flex-1 bg-da-depotBlue text-white py-2 rounded-xl font-bold shadow-md">অ্যাপ্লাই</button>
+              <button onClick={() => { if (startDate && endDate) { setActiveFilter('custom'); setIsCustomDateOpen(false); } else showAppToast('শুরু ও শেষ তারিখ দিন', 'error'); }} className="flex-1 bg-da-depotBlue text-white py-2 rounded-xl font-bold shadow-md">অ্যাপ্লাই</button>
             </div>
           </div>
         </div>
@@ -446,31 +432,30 @@ export default function DepotExpensePage({ onBack }: Props) {
 
       {deleteConfirmId && (
         <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl w-full max-w-xs overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+          <div className="bg-white rounded-2xl w-full max-w-xs overflow-hidden shadow-2xl">
             <div className="p-5 text-center">
-              <div className="w-14 h-14 bg-da-red/10 rounded-full flex items-center justify-center mx-auto mb-3">
-                <Trash2 size={26} className="text-da-red" />
-              </div>
+              <div className="w-14 h-14 bg-da-red/10 rounded-full flex items-center justify-center mx-auto mb-3"><Trash2 size={26} className="text-da-red" /></div>
               <h3 className="font-bold text-base text-da-textDark mb-1">খরচ ডিলিট করবেন?</h3>
-              <p className="text-xs text-da-textMuted">এই খরচটি রিসাইকেল বিনে জমা হবে। সেখান থেকে যেকোনো সময় ফিরিয়ে আনা যাবে।</p>
+              <p className="text-xs text-da-textMuted">এই খরচটি রিসাইকেল বিনে জমা হবে এবং ক্যাশবক্স থেকেও সমন্বয় হবে।</p>
             </div>
             <div className="p-3 border-t border-da-cardBorder bg-da-depotBg flex gap-2">
               <button onClick={() => setDeleteConfirmId(null)} disabled={isDeleting} className="flex-1 bg-white border border-da-cardBorder text-da-textMuted py-2 rounded-xl font-bold">বাতিল</button>
               <button onClick={handleDeleteExpense} disabled={isDeleting} className="flex-1 bg-da-red text-white py-2 rounded-xl font-bold shadow-md flex justify-center items-center gap-1.5">
-                {isDeleting ? <Loader2 size={14} className="animate-spin"/> : <Trash2 size={14}/>} ডিলিট
+                {isDeleting ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} ডিলিট
               </button>
             </div>
           </div>
         </div>
       )}
 
-      <ReceiptModal 
-        isOpen={isGlobalReceiptOpen} 
-        onClose={() => setIsGlobalReceiptOpen(false)} 
+      <ReceiptModal
+        isOpen={isGlobalReceiptOpen}
+        onClose={() => setIsGlobalReceiptOpen(false)}
         onCancel={() => setIsGlobalReceiptOpen(false)}
-        onFinalize={() => setIsGlobalReceiptOpen(false)} 
+        onFinalize={() => setIsGlobalReceiptOpen(false)}
         isSaving={false}
-        data={globalReceiptData} 
+        previewOnly={true}
+        data={globalReceiptData}
       />
     </div>
   );

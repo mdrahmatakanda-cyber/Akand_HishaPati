@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Printer, X, FileText, Download, Share2, CheckCircle2, Loader2 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
+import { numberToWordsBn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
 import { showAppToast } from '../components/PremiumToast';
 import { supabase } from '../lib/supabase';
@@ -340,6 +341,38 @@ export const ReceiptPaper: React.FC<{ data: ReceiptData; settings?: ReceiptSetti
   const previousDue = Number(data.previousDue || 0);
   const netPayableWithPrev = Math.max(0, (data.dueAmount || 0) + previousDue);
 
+  let wordsLabel = 'মোট জমা কথায়: ';
+  let wordsAmount = Number(data.paidAmount || 0);
+  if (isExpense) {
+    wordsLabel = 'মোট খরচ কথায়: ';
+    wordsAmount = Number(data.grandTotal || data.subtotal || 0);
+  } else if (isPurchase) {
+    if (Number(data.paidAmount || 0) > 0) {
+      wordsLabel = 'মোট পরিশোধ কথায়: ';
+      wordsAmount = Number(data.paidAmount);
+    } else {
+      wordsLabel = 'মোট ক্রয় বিল কথায়: ';
+      wordsAmount = Number(data.grandTotal || data.subtotal || 0);
+    }
+  } else if (isTransfer) {
+    if (Number(data.paidAmount || 0) > 0) {
+      wordsLabel = 'মোট জমা কথায়: ';
+      wordsAmount = Number(data.paidAmount);
+    } else {
+      wordsLabel = 'মোট ট্রান্সফার মূল্য কথায়: ';
+      wordsAmount = Number(data.grandTotal || data.subtotal || 0);
+    }
+  } else {
+    if (Number(data.paidAmount || 0) > 0) {
+      wordsLabel = 'মোট জমা কথায়: ';
+      wordsAmount = Number(data.paidAmount);
+    } else {
+      wordsLabel = 'সর্বমোট বাকি কথায়: ';
+      wordsAmount = Number(data.dueAmount || data.grandTotal || data.subtotal || 0);
+    }
+  }
+  const wordsText = numberToWordsBn(wordsAmount) || data.paidInWords || 'শূন্য টাকা মাত্র';
+
   const SectionTitle = ({ children }: { children: React.ReactNode }) => (
     <div className="flex items-center gap-1 mb-1 pb-1" style={{ borderBottom: `1px solid ${borderSoft}` }}>
       <span className="w-1.5 h-1.5 rotate-45" style={{ background: accent }} />
@@ -425,7 +458,9 @@ export const ReceiptPaper: React.FC<{ data: ReceiptData; settings?: ReceiptSetti
                 <p><span style={{ color: mutedColor }}>গাড়ি নাম্বার: </span><span className="font-semibold">{data.vehicleNo || 'N/A'}</span></p>
                 <p><span style={{ color: mutedColor }}>ড্রাইভার: </span>{data.driverName || 'N/A'}</p>
                 <p><span style={{ color: mutedColor }}>ড্রাইভার ফোন: </span>{data.driverPhone || 'N/A'}</p>
-                {cfg.showPriceAndTotals && <p className="mt-0.5"><span style={{ color: mutedColor }}>গাড়ি ভাড়া: </span><span className="font-bold" style={{ color: accent }}>{formatTaka(data.transportRent)}</span></p>}
+                {Number(data.transportRent) > 0 && (
+                  <p className="mt-0.5"><span style={{ color: mutedColor }}>গাড়ি ভাড়া: </span><span className="font-bold" style={{ color: accent }}>{formatTaka(data.transportRent)}</span></p>
+                )}
               </div>
             )}
           </div>
@@ -454,7 +489,7 @@ export const ReceiptPaper: React.FC<{ data: ReceiptData; settings?: ReceiptSetti
             <tbody>
               {data.items.map((item, index) => {
                 const company = item.companyName || (item.brandCategory && item.brandCategory !== item.category ? item.brandCategory : undefined);
-                const meta = [item.category, company].filter(Boolean).join(' • ');
+                const meta = company || '';
                 return (
                   <tr key={item.id || index} style={{ borderBottom: `1px solid ${borderSoft}` }}>
                     <td className="py-1.5 px-2 text-center" style={{ borderRight: `1px solid ${borderSoft}`, color: mutedColor }}>{(index + 1).toLocaleString('bn-BD', { minimumIntegerDigits: 2 })}</td>
@@ -500,20 +535,7 @@ export const ReceiptPaper: React.FC<{ data: ReceiptData; settings?: ReceiptSetti
           <div className="space-y-2">
             {cfg.showPriceAndTotals && cfg.showInWords && (
               <div className="rounded-md px-3 py-2" style={{ border: `1px solid ${borderSoft}`, backgroundColor: bgSoft }}>
-                <span style={{ color: mutedColor }}>{isExpense ? 'মোট খরচ কথায়: ' : isTransfer ? 'মোট পরিমাণ / টাকা কথায়: ' : 'কথায়: '}</span><span className="font-bold">{data.paidInWords || 'শূন্য টাকা মাত্র'}</span>
-              </div>
-            )}
-            
-            {!isExpense && (
-              <div className="rounded-md bg-white px-3 py-1.5 flex items-center justify-between text-[12px]" style={{ border: `1px solid ${borderSoft}` }}>
-                <span><span style={{ color: mutedColor }}>মোট বস্তা: </span><b>{data.totalBags}</b></span><span className="w-px h-4" style={{ backgroundColor: borderSoft }} />
-                <span><span style={{ color: mutedColor }}>মোট পিস: </span><b>{data.totalPieces} পিস</b></span>
-                {cfg.showPriceAndTotals && (
-                  <>
-                    <span className="w-px h-4" style={{ backgroundColor: borderSoft }} />
-                    <span><span style={{ color: mutedColor }}>গাড়ি ভাড়া: </span><b style={{ color: accent }}>{formatTaka(data.transportRent)}</b></span>
-                  </>
-                )}
+                <span style={{ color: mutedColor }}>{wordsLabel}</span><span className="font-bold">{wordsText}</span>
               </div>
             )}
             
@@ -535,7 +557,6 @@ export const ReceiptPaper: React.FC<{ data: ReceiptData; settings?: ReceiptSetti
                   <div className="px-3 py-2 space-y-1 text-[12px]">
                     <div className="flex justify-between"><span style={{ color: mutedColor }}>মোট বিল:</span><span className="font-bold">{formatTaka(data.subtotal)}</span></div>
                     {data.discount > 0 && <div className="flex justify-between"><span style={{ color: mutedColor }}>ডিসকাউন্ট:</span><span className="font-bold">- {formatTaka(data.discount)}</span></div>}
-                    {(data.deliveryCharge || data.transportRent) > 0 && <div className="flex justify-between"><span style={{ color: mutedColor }}>ডেলিভারি / ভাড়া:</span><span className="font-bold" style={{ color: accent }}>{formatTaka(data.deliveryCharge || data.transportRent)}</span></div>}
                     <div className="flex justify-between"><span style={{ color: mutedColor }}>মোট জমা:</span><span className="font-bold" style={{ color: accent }}>- {formatTaka(data.paidAmount)}</span></div>
                     {cfg.showPreviousDue && <div className="flex justify-between"><span style={{ color: mutedColor }}>পূর্বের বাকি:</span><span className="font-bold">{formatTaka(previousDue)}</span></div>}
                   </div>

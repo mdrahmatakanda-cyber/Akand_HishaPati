@@ -345,7 +345,7 @@ function AppContent() {
         : <CompanyPage onBack={goBack} />;
     }
 
-    if (currentScreen === 'cashbox') return <CashboxPage onBack={goBack} />;
+    if (currentScreen === 'cashbox') return <CashboxPage isDepot={currentMode === 'depot'} onBack={goBack} />;
     if (currentScreen === 'partners') return <PartnersPage onBack={goBack} />;
     if (currentScreen === 'marketing') return <MarketingPage onBack={goBack} />;
     if (currentScreen === 'app_access') return <AppAccessPage onBack={goBack} />;

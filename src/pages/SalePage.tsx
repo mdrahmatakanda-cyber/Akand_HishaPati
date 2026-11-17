@@ -92,6 +92,18 @@ export default function SalePage({ onBack, onNavigate, isDepot = false }: SalePr
         showAppToast("সেভ করতে সমস্যা: " + error.message, 'error');
         throw error;
       }
+
+      if (isDepot && data.transportPaidBy === 'depot' && Number(data.deliveryVal) > 0 && activeBusiness?.id) {
+        await supabase.from('expenses').insert([{
+          business_id: activeBusiness.id,
+          is_depot: true,
+          expense_type: 'পরিবহন খরচ',
+          for_whom: 'ড্রাইভার / গাড়ি ভাড়া',
+          amount: Number(data.deliveryVal),
+          note: `বিক্রির গাড়ি ভাড়া${data.remarks ? ` (${data.remarks})` : ''}`,
+          date: new Date().toISOString().split('T')[0]
+        }]);
+      }
     }
     showAppToast('বিক্রি সফলভাবে সম্পন্ন হয়েছে!', 'success');
     onBack();

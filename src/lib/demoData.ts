@@ -389,3 +389,16 @@ export const demoDeletedItems = [
   { id: 'del-exp-1',   type: 'Expense',  name: 'গোডাউন ভাড়া',              amount: 5000, deletedAt: '2026-11-02T10:00:00' },
   { id: 'del-trn-1',   type: 'Transfer', name: 'ট্রান্সফার # TR-2026-011',  amount: 0,    deletedAt: '2026-11-01T13:00:00' },
 ];
+
+export const demoShopCashbox = [
+  { id: 'sc1', source: 'sale', type: 'নগদ বিক্রি', title: 'বিক্রি #INV-1001 (করিম)', amount: 4500, isIncome: true, rawDate: Date.now() - 3600000, date: 'আজ | ১১:৩০ AM', note: 'দোকান নগদ বিক্রি' },
+  { id: 'sc2', source: 'purchase', type: 'নগদ ক্রয়', title: 'ক্রয় #PUR-201 (ভাই ভাই এগ্রো)', amount: 2200, isIncome: false, rawDate: Date.now() - 7200000, date: 'আজ | ১০:১৫ AM', note: 'দোকান নগদ ক্রয়' },
+  { id: 'sc3', source: 'expense', type: 'খরচ', title: 'বিদ্যুৎ বিল', amount: 650, isIncome: false, rawDate: Date.now() - 86400000, date: 'গতকাল', note: 'দোকান খরচ' },
+];
+
+export const demoDepotCashbox = [
+  { id: 'dc1', source: 'manual', type: 'কোম্পানি গাড়ি ভাড়া', title: 'কোম্পানি থেকে প্রাপ্ত গাড়ি ভাড়া', amount: 2500, isIncome: true, rawDate: Date.now() - 3600000, date: 'আজ | ১২:০০ PM', note: 'নিউজা মাল পৌঁছানো বাবদ' },
+  { id: 'dc2', source: 'sale', type: 'নগদ বিক্রি', title: 'ডিপো বিক্রি #DA-2026-0001', amount: 35000, isIncome: true, rawDate: Date.now() - 7200000, date: 'আজ | ১০:৩০ AM', note: 'ডিলার নগদ জমা' },
+  { id: 'dc3', source: 'expense', type: 'পরিবহন খরচ', title: 'গাড়ি ভাড়া (ড্রাইভার সোহেল)', amount: 1200, isIncome: false, rawDate: Date.now() - 10800000, date: 'আজ | ০৯:১৫ AM', note: 'ডিলার ডেলিভারি ভাড়া' },
+  { id: 'dc4', source: 'purchase', type: 'নগদ ক্রয়', title: 'ডিপো স্টক-ইন পেমেন্ট', amount: 18000, isIncome: false, rawDate: Date.now() - 86400000, date: 'গতকাল', note: 'নগদ পরিশোধ' },
+];

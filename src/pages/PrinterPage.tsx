@@ -3,11 +3,13 @@ import {
   ArrowLeft, HelpCircle, Printer, 
   Search, Plus, CheckCircle2, X, Settings, 
   Trash2, Star, RefreshCw, Smartphone, Save,
-  FileText, LayoutTemplate, ReceiptText, ChevronRight
+  FileText, LayoutTemplate, ReceiptText, ChevronRight, Eye, Loader2
 } from 'lucide-react';
 import { toBangla } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
 import PremiumToast from '../components/PremiumToast';
+import { ReceiptModal, DEFAULT_RECEIPT_SETTINGS, getMergedReceiptSettings, formatReceiptNumber, type ReceiptSettings, type ReceiptTypeKey, type ReceiptData } from './ReceiptModal';
 
 interface Props {
   onBack: () => void;
@@ -35,46 +37,123 @@ export default function PrinterPage({ onBack }: Props) {
   const showToast = (message: string, type: 'success' | 'error' = 'success') => setToast({ show: true, message, type });
   
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<'common' | 'by_type'>('common');
+  const [activeReceiptTab, setActiveReceiptTab] = useState<ReceiptTypeKey>('sale');
   const [invoiceFormat, setInvoiceFormat] = useState<'A4' | '80mm' | '58mm'>('A4');
-
-  const [receiptSettings, setReceiptSettings] = useState({
-    shopName: '',
-    shopAddress: '',
-    shopPhone: '',
-    shopEmail: '',
-    footerText: 'আমাদের সাথে ব্যবসা করার জন্য ধন্যবাদ!',
-    invoicePrefix: 'INV-',
-    format: 'A4'
-  });
+  const [receiptSettings, setReceiptSettings] = useState<ReceiptSettings>(() => getMergedReceiptSettings(null, activeBusiness));
 
   useEffect(() => {
-    if (activeBusiness?.id) {
-      const saved = localStorage.getItem(`receipt_settings_${activeBusiness.id}`);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        setReceiptSettings(parsed);
-        if (parsed.format) setInvoiceFormat(parsed.format);
-      } else {
-        setReceiptSettings({
-          shopName: activeBusiness.name || '',
-          shopAddress: (activeBusiness as any).address || '',
-          shopPhone: (activeBusiness as any).phone || '',
-          shopEmail: (activeBusiness as any).email || '',
-          footerText: 'আমাদের সাথে ব্যবসা করার জন্য ধন্যবাদ!',
-          invoicePrefix: 'INV-',
-          format: 'A4'
-        });
-      }
-    }
-  }, [activeBusiness]);
+    if (!activeBusiness?.id) return;
+    const loadFromSupabase = async () => {
+      try {
+        const localSaved = localStorage.getItem(`receipt_settings_${activeBusiness.id}`);
+        if (localSaved) {
+          const mergedLocal = getMergedReceiptSettings(JSON.parse(localSaved), activeBusiness);
+          setReceiptSettings(mergedLocal);
+          setInvoiceFormat(mergedLocal.format || 'A4');
+        } else {
+          setReceiptSettings(getMergedReceiptSettings(null, activeBusiness));
+        }
 
-  const handleSaveSettings = () => {
+        const { data, error } = await supabase
+          .from('businesses')
+          .select('receipt_settings')
+          .eq('id', activeBusiness.id)
+          .single();
+
+        if (!error && data?.receipt_settings && Object.keys(data.receipt_settings).length > 0) {
+          const mergedCloud = getMergedReceiptSettings(data.receipt_settings, activeBusiness);
+          setReceiptSettings(mergedCloud);
+          setInvoiceFormat(mergedCloud.format || 'A4');
+          localStorage.setItem(`receipt_settings_${activeBusiness.id}`, JSON.stringify(mergedCloud));
+        }
+      } catch (err) {
+        console.error('Receipt settings load error:', err);
+      }
+    };
+    loadFromSupabase();
+  }, [activeBusiness?.id]);
+
+  const handleSaveSettings = async () => {
     if (!activeBusiness?.id) return showToast('বিজনেস পাওয়া যায়নি!', 'error');
-    const dataToSave = { ...receiptSettings, format: invoiceFormat };
-    localStorage.setItem(`receipt_settings_${activeBusiness.id}`, JSON.stringify(dataToSave));
-    setReceiptSettings(dataToSave);
-    showToast('রিসিপ্ট সেটিংস সফলভাবে সেভ হয়েছে!', 'success');
-    setIsSettingsOpen(false); 
+    setIsSavingSettings(true);
+    try {
+      const dataToSave: ReceiptSettings = { ...receiptSettings, format: invoiceFormat };
+      const { error } = await supabase
+        .from('businesses')
+        .update({ receipt_settings: dataToSave })
+        .eq('id', activeBusiness.id);
+      if (error) throw error;
+
+      localStorage.setItem(`receipt_settings_${activeBusiness.id}`, JSON.stringify(dataToSave));
+      setReceiptSettings(dataToSave);
+      showToast('রিসিপ্ট সেটিংস ক্লাউডে সেভ হয়েছে!', 'success');
+      setIsSettingsOpen(false);
+    } catch (err: any) {
+      showToast('সেভ করতে সমস্যা হয়েছে: ' + err.message, 'error');
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
+
+  const updateTypeConfig = (key: keyof typeof DEFAULT_RECEIPT_SETTINGS.types.sale, val: any) => {
+    setReceiptSettings(prev => ({
+      ...prev,
+      types: {
+        ...prev.types,
+        [activeReceiptTab]: { ...prev.types[activeReceiptTab], [key]: val }
+      }
+    }));
+  };
+
+  const getSampleReceiptData = (rType: ReceiptTypeKey): ReceiptData => {
+    const cfg = receiptSettings.types[rType];
+    const isExp = rType === 'expense';
+    return {
+      type: rType,
+      invoiceNo: formatReceiptNumber(cfg, undefined, receiptSettings.badgeText),
+      date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+      status: isExp ? 'পরিশোধিত' : 'আংশিক জমা',
+      shopName: receiptSettings.shopName,
+      shopAddress: receiptSettings.shopAddress,
+      shopPhone: receiptSettings.shopPhone,
+      shopEmail: receiptSettings.shopEmail,
+      shopLogoUrl: receiptSettings.shopLogoUrl,
+      shopDescription: receiptSettings.shopTagline,
+      customerName: isExp ? 'অফিস ভাড়া ও স্টাফ খরচ' : rType === 'purchase' ? 'নিউজা এগ্রো কোম্পানি' : 'মেসার্স ভাই ভাই ট্রেডার্স',
+      proprietor: 'মোঃ করিম মিয়া',
+      customerPhone: '01711-000000',
+      customerAddress: 'গাজীপুর সদর',
+      marketName: 'চৌরাস্তা বাজার',
+      officerName: 'রফিকুল ইসলাম',
+      officerPhone: '01811-000000',
+      officerEmail: 'officer@hishabpati.com',
+      receiptTime: '১২:৩০ PM',
+      vehicleNo: 'ঢাকা মেট্রো-ট ১১-২২৩৩',
+      driverName: 'সোহেল রানা',
+      driverPhone: '01911-000000',
+      transportRent: isExp ? 0 : 1200,
+      items: isExp
+        ? [{ id: '1', name: 'গুদাম ভাড়া (মাসিক)', quantity: 1, unit: 'মাস', unitPrice: 15000, totalPrice: 15000 }]
+        : [
+            { id: '1', name: 'ব্রয়লার স্টার্টার ফিড (৫০ কেজি)', category: 'ফিড', quantity: 20, unit: 'বস্তা', unitPrice: 2800, totalPrice: 56000 },
+            { id: '2', name: 'লেয়ার লে-১ ফিড (৫০ কেজি)', category: 'ফিড', quantity: 10, unit: 'বস্তা', unitPrice: 2600, totalPrice: 26000 },
+          ],
+      totalBags: isExp ? 0 : 30,
+      totalPieces: 0,
+      subtotal: isExp ? 15000 : 82000,
+      discount: 0,
+      grandTotal: isExp ? 15000 : 83200,
+      paidAmount: isExp ? 15000 : 50000,
+      dueAmount: isExp ? 0 : 33200,
+      previousDue: 12000,
+      paidInWords: isExp ? 'পনেরো হাজার টাকা মাত্র' : 'পঞ্চাশ হাজার টাকা মাত্র',
+      note: 'নমুনা রিসিপ্ট প্রিভিউ',
+      batch: 'B-204',
+      challan: 'CH-889',
+    };
   };
 
   const handleScan = () => {
@@ -252,92 +331,502 @@ export default function PrinterPage({ onBack }: Props) {
         </div>
       )}
 
-      {/* ================= মডাল: বিস্তারিত রিসিপ্ট সেটিংস ================= */}
+      {/* ================= ফুল-স্ক্রিন পেজ: রিসিপ্ট সেটিংস ================= */}
       {isSettingsOpen && (
-        <div className="fixed inset-0 bg-black/60 z-[120] flex justify-center items-end sm:items-center backdrop-blur-sm">
-          <div className="bg-[#EFF6F3] w-full h-[90dvh] sm:h-auto sm:max-h-[90vh] sm:max-w-md sm:rounded-2xl rounded-t-2xl overflow-hidden flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-300">
-            
-            <div className="bg-[#0B5C47] p-4 flex justify-between items-center text-white shrink-0">
-              <h2 className="font-bold text-base flex items-center gap-2"><Settings size={18}/> রিসিপ্ট সেটিংস</h2>
-              <button onClick={() => setIsSettingsOpen(false)} className="p-1 bg-white/20 rounded-full hover:bg-white/30"><X size={18}/></button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
-              
-              {/* ৩টি ফরম্যাট সিলেকশন অপশন */}
-              <div>
-                <label className="text-[11px] font-bold text-gray-600 mb-2 block">চালানের ফরম্যাট সিলেক্ট করুন</label>
-                <div className="grid grid-cols-3 gap-2">
-                  <button onClick={() => setInvoiceFormat('A4')} className={`p-2 py-3 rounded-xl border-2 flex flex-col items-center justify-center gap-1.5 transition ${invoiceFormat === 'A4' ? 'border-[#1E88E5] bg-[#EFF6FF]' : 'border-gray-200 bg-white'}`}>
-                    <FileText size={24} className={invoiceFormat === 'A4' ? 'text-[#1E88E5]' : 'text-gray-400'} />
-                    <span className="text-[11px] font-bold text-gray-800">A4 পেজ</span>
-                  </button>
-                  <button onClick={() => setInvoiceFormat('80mm')} className={`p-2 py-3 rounded-xl border-2 flex flex-col items-center justify-center gap-1.5 transition ${invoiceFormat === '80mm' ? 'border-[#1E88E5] bg-[#EFF6FF]' : 'border-gray-200 bg-white'}`}>
-                    <LayoutTemplate size={24} className={invoiceFormat === '80mm' ? 'text-[#1E88E5]' : 'text-gray-400'} />
-                    <span className="text-[11px] font-bold text-gray-800">থার্মাল ৮০</span>
-                  </button>
-                  <button onClick={() => setInvoiceFormat('58mm')} className={`p-2 py-3 rounded-xl border-2 flex flex-col items-center justify-center gap-1.5 transition ${invoiceFormat === '58mm' ? 'border-[#1E88E5] bg-[#EFF6FF]' : 'border-gray-200 bg-white'}`}>
-                    <ReceiptText size={24} className={invoiceFormat === '58mm' ? 'text-[#1E88E5]' : 'text-gray-400'} />
-                    <span className="text-[11px] font-bold text-gray-800">থার্মাল ৫৮</span>
-                  </button>
+        <div className="fixed inset-0 bg-[#EFF6F3] z-[120] flex flex-col overflow-hidden animate-in slide-in-from-right duration-200">
+          
+          {/* টপ হেডার ও ২টি মেইন ট্যাব */}
+          <header className="bg-gradient-to-r from-[#0B5C47] to-[#062D5E] text-white shadow-md shrink-0">
+            <div className="max-w-3xl mx-auto px-3 py-2.5 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <button type="button" onClick={() => setIsSettingsOpen(false)} className="p-1.5 bg-white/10 rounded-lg hover:bg-white/20 transition">
+                  <ArrowLeft size={20} />
+                </button>
+                <div>
+                  <h2 className="font-bold text-base leading-tight">রিসিপ্ট সেটিংস</h2>
+                  <p className="text-[10px] text-emerald-100">ডিজাইন, তথ্য ও প্রিন্ট কাস্টমাইজ করুন</p>
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={() => setIsPreviewOpen(true)}
+                className="bg-white/15 hover:bg-white/25 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 active:scale-95 transition"
+              >
+                <Eye size={14}/> প্রিভিউ
+              </button>
+            </div>
 
-              {/* কাস্টমাইজেশন ফর্ম */}
-              <div className="bg-white rounded-xl p-3 border border-gray-200 shadow-sm flex flex-col gap-3">
-                <div>
-                  <label className="text-[11px] font-bold text-gray-600 mb-1 block">দোকানের নাম</label>
-                  <input type="text" value={receiptSettings.shopName} onChange={e => setReceiptSettings({...receiptSettings, shopName: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-[#0B5C47]" />
-                </div>
-                <div>
-                  <label className="text-[11px] font-bold text-gray-600 mb-1 block">ঠিকানা</label>
-                  <input type="text" value={receiptSettings.shopAddress} onChange={e => setReceiptSettings({...receiptSettings, shopAddress: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-[#0B5C47]" />
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-[11px] font-bold text-gray-600 mb-1 block">মোবাইল</label>
-                    <input type="text" value={receiptSettings.shopPhone} onChange={e => setReceiptSettings({...receiptSettings, shopPhone: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-[#0B5C47]" />
-                  </div>
-                  <div>
-                    <label className="text-[11px] font-bold text-gray-600 mb-1 block">ইমেইল</label>
-                    <input type="text" value={receiptSettings.shopEmail} onChange={e => setReceiptSettings({...receiptSettings, shopEmail: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-[#0B5C47]" />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-[11px] font-bold text-gray-600 mb-1 block">চালান প্রিফিক্স</label>
-                    <input type="text" value={receiptSettings.invoicePrefix} onChange={e => setReceiptSettings({...receiptSettings, invoicePrefix: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-[#0B5C47] mb-1.5" placeholder="INV-" />
-                    <div className="flex gap-1.5 flex-wrap">
-                      {['INV-', 'MEMO-', 'CHALLAN-'].map((prefix) => (
-                        <button
-                          key={prefix}
-                          type="button"
-                          onClick={() => setReceiptSettings({ ...receiptSettings, invoicePrefix: prefix })}
-                          className={`text-[10px] px-2 py-1 rounded border transition ${receiptSettings.invoicePrefix === prefix ? 'bg-[#EFF6FF] border-[#1E88E5] text-[#1E88E5] font-bold' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'}`}
-                        >
-                          {prefix}
-                        </button>
-                      ))}
+            <div className="max-w-3xl mx-auto flex px-3 gap-2 pb-2">
+              <button
+                type="button"
+                onClick={() => setSettingsTab('common')}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold transition ${settingsTab === 'common' ? 'bg-white text-[#0B5C47] shadow-sm' : 'bg-white/10 text-white/85'}`}
+              >
+                সব রিসিপ্টের কমন তথ্য
+              </button>
+              <button
+                type="button"
+                onClick={() => setSettingsTab('by_type')}
+                className={`flex-1 py-2 rounded-xl text-xs font-bold transition ${settingsTab === 'by_type' ? 'bg-white text-[#0B5C47] shadow-sm' : 'bg-white/10 text-white/85'}`}
+              >
+                রিসিপ্টের ধরন অনুযায়ী
+              </button>
+            </div>
+          </header>
+
+          {/* মূল বডি */}
+          <div className="flex-1 overflow-y-auto p-3 pb-24">
+            <div className="max-w-3xl mx-auto flex flex-col gap-3">
+
+              {/* ==================== ট্যাব ১: কমন তথ্য ==================== */}
+              {settingsTab === 'common' && (
+                <>
+                  {/* কার্ড ১: পেপার ও প্রিন্ট */}
+                  <div className="bg-white rounded-2xl p-3.5 border border-gray-200 shadow-sm flex flex-col gap-3">
+                    <div className="flex items-center gap-2 border-b border-gray-100 pb-2">
+                      <span className="w-1.5 h-4 bg-[#0B5C47] rounded-full" />
+                      <h3 className="text-xs font-bold text-[#0F2A3D]">পেপার সাইজ ও প্রিন্ট অপশন</h3>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      <button type="button" onClick={() => setInvoiceFormat('A4')} className={`p-2.5 rounded-xl border-2 flex flex-col items-center justify-center gap-1 transition ${invoiceFormat === 'A4' ? 'border-[#1E88E5] bg-[#EFF6FF]' : 'border-gray-200 bg-white'}`}>
+                        <FileText size={20} className={invoiceFormat === 'A4' ? 'text-[#1E88E5]' : 'text-gray-400'} />
+                        <span className="text-[11px] font-bold text-gray-800">A4 পেজ</span>
+                      </button>
+                      <button type="button" onClick={() => setInvoiceFormat('80mm')} className={`p-2.5 rounded-xl border-2 flex flex-col items-center justify-center gap-1 transition ${invoiceFormat === '80mm' ? 'border-[#1E88E5] bg-[#EFF6FF]' : 'border-gray-200 bg-white'}`}>
+                        <LayoutTemplate size={20} className={invoiceFormat === '80mm' ? 'text-[#1E88E5]' : 'text-gray-400'} />
+                        <span className="text-[11px] font-bold text-gray-800">থার্মাল ৮০</span>
+                      </button>
+                      <button type="button" onClick={() => setInvoiceFormat('58mm')} className={`p-2.5 rounded-xl border-2 flex flex-col items-center justify-center gap-1 transition ${invoiceFormat === '58mm' ? 'border-[#1E88E5] bg-[#EFF6FF]' : 'border-gray-200 bg-white'}`}>
+                        <ReceiptText size={20} className={invoiceFormat === '58mm' ? 'text-[#1E88E5]' : 'text-gray-400'} />
+                        <span className="text-[11px] font-bold text-gray-800">থার্মাল ৫৮</span>
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2.5 pt-1">
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-500 mb-1 block">লেখার সাইজ (A4)</label>
+                        <div className="grid grid-cols-3 gap-1">
+                          {[{ k: 'small', l: 'ছোট' }, { k: 'medium', l: 'মাঝারি' }, { k: 'large', l: 'বড়' }].map(f => (
+                            <button key={f.k} type="button" onClick={() => setReceiptSettings({ ...receiptSettings, fontSize: f.k as any })} className={`py-1.5 rounded-lg border text-[10px] font-bold ${receiptSettings.fontSize === f.k ? 'bg-[#0B5C47] text-white border-[#0B5C47]' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>{f.l}</button>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-[10px] font-bold text-gray-500 mb-1 block">প্রিন্ট কপি (A4)</label>
+                        <div className="grid grid-cols-2 gap-1">
+                          <button type="button" onClick={() => setReceiptSettings({ ...receiptSettings, copyMode: 'single' })} className={`py-1.5 rounded-lg border text-[10px] font-bold ${receiptSettings.copyMode === 'single' ? 'bg-[#0B5C47] text-white border-[#0B5C47]' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>১ কপি</button>
+                          <button type="button" onClick={() => setReceiptSettings({ ...receiptSettings, copyMode: 'double' })} className={`py-1.5 rounded-lg border text-[10px] font-bold ${receiptSettings.copyMode === 'double' ? 'bg-[#0B5C47] text-white border-[#0B5C47]' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>২ কপি</button>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                  <div>
-                    <label className="text-[11px] font-bold text-gray-600 mb-1 block">ফুটার টেক্সট</label>
-                    <input type="text" value={receiptSettings.footerText} onChange={e => setReceiptSettings({...receiptSettings, footerText: e.target.value})} className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:border-[#0B5C47]" />
-                  </div>
-                </div>
-              </div>
-            </div>
 
-            {/* মডালের ফুটার বাটন */}
-            <div className="p-3 bg-white border-t flex gap-2 shrink-0">
-              <button onClick={() => setIsSettingsOpen(false)} className="flex-1 bg-gray-100 text-gray-700 py-2.5 rounded-xl font-bold shadow-sm text-sm">বাতিল</button>
-              <button onClick={handleSaveSettings} className="flex-1 bg-[#0B5C47] text-white py-2.5 rounded-xl font-bold shadow-md flex justify-center items-center gap-2 text-sm active:scale-95 transition">
-                <Save size={16}/> সেভ করুন
+                  {/* কার্ড ২: প্রতিষ্ঠানের পরিচয় */}
+                  <div className="bg-white rounded-2xl p-3.5 border border-gray-200 shadow-sm flex flex-col gap-2.5">
+                    <div className="flex items-center gap-2 border-b border-gray-100 pb-2">
+                      <span className="w-1.5 h-4 bg-[#1E88E5] rounded-full" />
+                      <h3 className="text-xs font-bold text-[#0F2A3D]">প্রতিষ্ঠানের পরিচয়</h3>
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-bold text-gray-600 mb-1 block">দোকান / প্রতিষ্ঠানের নাম</label>
+                      <input type="text" value={receiptSettings.shopName} onChange={e => setReceiptSettings({...receiptSettings, shopName: e.target.value})} className="w-full border border-gray-300 rounded-xl p-2.5 text-sm outline-none focus:border-[#0B5C47]" />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-bold text-gray-600 mb-1 block">ব্যবসার বিবরণ / ট্যাগলাইন</label>
+                      <input type="text" value={receiptSettings.shopTagline} onChange={e => setReceiptSettings({...receiptSettings, shopTagline: e.target.value})} className="w-full border border-gray-300 rounded-xl p-2.5 text-sm outline-none focus:border-[#0B5C47]" />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-bold text-gray-600 mb-1 block">ঠিকানা</label>
+                      <input type="text" value={receiptSettings.shopAddress} onChange={e => setReceiptSettings({...receiptSettings, shopAddress: e.target.value})} className="w-full border border-gray-300 rounded-xl p-2.5 text-sm outline-none focus:border-[#0B5C47]" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="text-[11px] font-bold text-gray-600 mb-1 block">মোবাইল</label>
+                        <input type="text" value={receiptSettings.shopPhone} onChange={e => setReceiptSettings({...receiptSettings, shopPhone: e.target.value})} className="w-full border border-gray-300 rounded-xl p-2.5 text-sm outline-none focus:border-[#0B5C47]" />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-gray-600 mb-1 block">ইমেইল</label>
+                        <input type="text" value={receiptSettings.shopEmail} onChange={e => setReceiptSettings({...receiptSettings, shopEmail: e.target.value})} className="w-full border border-gray-300 rounded-xl p-2.5 text-sm outline-none focus:border-[#0B5C47]" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* কার্ড ৩: লোগো, ব্যাজ ও থিম কালার */}
+                  <div className="bg-white rounded-2xl p-3.5 border border-gray-200 shadow-sm flex flex-col gap-2.5">
+                    <div className="flex items-center gap-2 border-b border-gray-100 pb-2">
+                      <span className="w-1.5 h-4 bg-[#B98F33] rounded-full" />
+                      <h3 className="text-xs font-bold text-[#0F2A3D]">লোগো ও রঙের ধরন</h3>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="text-[11px] font-bold text-gray-600 mb-1 block">লোগো ব্যাজ (উপরে)</label>
+                        <input type="text" maxLength={4} value={receiptSettings.badgeText} onChange={e => setReceiptSettings({...receiptSettings, badgeText: e.target.value})} className="w-full border border-gray-300 rounded-xl p-2.5 text-sm outline-none focus:border-[#0B5C47]" />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-gray-600 mb-1 block">লোগো ব্যাজ (নিচে)</label>
+                        <input type="text" maxLength={8} value={receiptSettings.badgeSubText} onChange={e => setReceiptSettings({...receiptSettings, badgeSubText: e.target.value})} className="w-full border border-gray-300 rounded-xl p-2.5 text-sm outline-none focus:border-[#0B5C47]" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-bold text-gray-600 mb-1 block">লোগো ইমেজ URL (ঐচ্ছিক)</label>
+                      <input type="text" value={receiptSettings.shopLogoUrl} onChange={e => setReceiptSettings({...receiptSettings, shopLogoUrl: e.target.value})} placeholder="https://..." className="w-full border border-gray-300 rounded-xl p-2.5 text-sm outline-none focus:border-[#0B5C47]" />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-bold text-gray-600 mb-1.5 block">রিসিপ্ট বর্ডার ও থিম কালার</label>
+                      <div className="grid grid-cols-4 gap-2">
+                        {[
+                          { label: 'সোনালী', color: '#B98F33' },
+                          { label: 'সবুজ', color: '#0B5C47' },
+                          { label: 'নীল', color: '#1565C0' },
+                          { label: 'নেভি', color: '#1B2A41' },
+                        ].map(c => (
+                          <button
+                            key={c.color}
+                            type="button"
+                            onClick={() => setReceiptSettings({ ...receiptSettings, themeColor: c.color })}
+                            className={`py-2 rounded-xl border text-[11px] font-bold flex items-center justify-center gap-1.5 transition ${receiptSettings.themeColor === c.color ? 'border-gray-900 bg-gray-100' : 'border-gray-200 bg-white'}`}
+                          >
+                            <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: c.color }} />
+                            {c.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* কার্ড ৪: শুভেচ্ছা বার্তা ও ফুটার ১ */}
+                  <div className="bg-white rounded-2xl p-3.5 border border-gray-200 shadow-sm flex flex-col gap-3">
+                    <div className="flex items-center gap-2 border-b border-gray-100 pb-2">
+                      <span className="w-1.5 h-4 bg-emerald-600 rounded-full" />
+                      <h3 className="text-xs font-bold text-[#0F2A3D]">শুভেচ্ছা বার্তা ও ফুটার</h3>
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-gray-600 mb-1 block">শুভেচ্ছা বার্তা (স্বাক্ষরের একটু উপরে)</label>
+                      <textarea rows={2} value={receiptSettings.greetingText} onChange={e => setReceiptSettings({...receiptSettings, greetingText: e.target.value})} className="w-full border border-gray-300 rounded-xl p-2.5 text-sm outline-none focus:border-[#0B5C47]" />
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-gray-600 mb-1 block">ফুটার ১ (নিচে সেন্টারে)</label>
+                      <textarea rows={2} value={receiptSettings.footerText} onChange={e => setReceiptSettings({...receiptSettings, footerText: e.target.value})} className="w-full border border-gray-300 rounded-xl p-2.5 text-sm outline-none focus:border-[#0B5C47]" />
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {[
+                          'সফটওয়্যার দ্বারা স্বয়ংক্রিয়ভাবে প্রস্তুতকৃত ডিজিটাল রিসিপ্ট।',
+                          'ডিজিটাল পদ্ধতিতে প্রস্তুতকৃত রিসিপ্ট — যেকোনো প্রয়োজনে অফিসে যোগাযোগ করুন।',
+                          'পণ্য ও হিসাব বুঝে নিয়ে স্বাক্ষর করুন। আপনার আস্থাই আমাদের মূলধন।',
+                          'ডিজিটাল মেমো • দ্রুত, নির্ভুল ও নির্ভরযোগ্য হিসাব ব্যবস্থাপনা।',
+                        ].map((preset, idx) => (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => setReceiptSettings({ ...receiptSettings, footerText: preset })}
+                            className={`text-[10px] px-2.5 py-1 rounded-lg border text-left transition ${receiptSettings.footerText === preset ? 'bg-[#EFF6FF] border-[#1E88E5] text-[#1E88E5] font-bold' : 'bg-gray-50 border-gray-200 text-gray-600'}`}
+                          >
+                            প্রিসেট {toBangla(idx + 1)}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* ==================== ট্যাব ২: রিসিপ্টের ধরন অনুযায়ী ==================== */}
+              {settingsTab === 'by_type' && (
+                <>
+                  {/* ৪টি রিসিপ্টের ধরন */}
+                  <div className="bg-white rounded-2xl p-2 border border-gray-200 shadow-sm grid grid-cols-4 gap-1.5">
+                    {[
+                      { k: 'sale', l: 'বিক্রি' },
+                      { k: 'purchase', l: 'ক্রয়' },
+                      { k: 'transfer', l: 'ট্রান্সফার' },
+                      { k: 'expense', l: 'খরচ' },
+                    ].map(tab => (
+                      <button
+                        key={tab.k}
+                        type="button"
+                        onClick={() => setActiveReceiptTab(tab.k as ReceiptTypeKey)}
+                        className={`py-2.5 rounded-xl text-xs font-bold transition ${activeReceiptTab === tab.k ? 'bg-[#0B5C47] text-white shadow-sm' : 'bg-gray-50 text-gray-600'}`}
+                      >
+                        {tab.l}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* শিরোনাম ও প্রিফিক্স */}
+                  <div className="bg-white rounded-2xl p-3.5 border border-gray-200 shadow-sm flex flex-col gap-3">
+                    <div className="flex items-center gap-2 border-b border-gray-100 pb-2">
+                      <span className="w-1.5 h-4 bg-[#0B5C47] rounded-full" />
+                      <h3 className="text-xs font-bold text-[#0F2A3D]">শিরোনাম ও নম্বর প্রিফিক্স</h3>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="text-[11px] font-bold text-gray-600 mb-1 block">শিরোনাম (বাংলা)</label>
+                        <input type="text" value={receiptSettings.types[activeReceiptTab].title} onChange={e => updateTypeConfig('title', e.target.value)} className="w-full border border-gray-300 rounded-xl p-2 text-sm outline-none focus:border-[#0B5C47]" />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-bold text-gray-600 mb-1 block">সাবটাইটেল (ইংরেজি)</label>
+                        <input type="text" value={receiptSettings.types[activeReceiptTab].subtitle} onChange={e => updateTypeConfig('subtitle', e.target.value)} className="w-full border border-gray-300 rounded-xl p-2 text-sm outline-none focus:border-[#0B5C47]" />
+                      </div>
+                    </div>
+
+                    {/* রিসিপ্ট নম্বর ফরম্যাট */}
+                    <div className="pt-2.5 border-t border-gray-100 flex flex-col gap-2.5">
+                      <div className="flex justify-between items-center">
+                        <label className="text-[11px] font-bold text-gray-600">রিসিপ্ট নম্বর ফরম্যাট</label>
+                        <span className="text-[11px] font-bold text-[#0B5C47] bg-[#EFF6F3] border border-[#0B5C47]/20 px-2.5 py-0.5 rounded-md">
+                          উদাহরণ: #{formatReceiptNumber(receiptSettings.types[activeReceiptTab], undefined, receiptSettings.badgeText)}
+                        </span>
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        {[
+                          {
+                            k: 'brand_year_seq',
+                            title: '[ব্র্যান্ড/কোম্পানির সংক্ষিপ্ত রূপ]-[সাল]-[ক্রমিক নম্বর]',
+                            ex: 'DA-2026-0001',
+                            defaultDigits: 4,
+                            defaultStart: 1,
+                          },
+                          {
+                            k: 'day_month_seq',
+                            title: '[তারিখ/মাস]-[ক্রমিক নম্বর]',
+                            ex: '1711-001 (১৭ নভেম্বর তারিখের ১ নম্বর রিসিপ্ট)',
+                            defaultDigits: 3,
+                            defaultStart: 1,
+                          },
+                          {
+                            k: 'code_seq',
+                            title: '[সংক্ষিপ্ত কোড]-[ক্রমিক নম্বর]',
+                            ex: 'INV-1050 বা REC-501',
+                            defaultDigits: 0,
+                            defaultStart: 1050,
+                          },
+                          {
+                            k: 'custom',
+                            title: 'কাস্টম ফরম্যাট (নিজের মতো সাজান)',
+                            ex: 'যেমন: DA/1711/001 অথবা INV-2026-501',
+                            defaultDigits: 3,
+                            defaultStart: 1,
+                          },
+                        ].map(fmt => {
+                          const currentCfg = receiptSettings.types[activeReceiptTab];
+                          const isSelected = (currentCfg.numberFormat || 'brand_year_seq') === fmt.k;
+                          return (
+                            <button
+                              key={fmt.k}
+                              type="button"
+                              onClick={() => {
+                                setReceiptSettings(prev => ({
+                                  ...prev,
+                                  types: {
+                                    ...prev.types,
+                                    [activeReceiptTab]: {
+                                      ...prev.types[activeReceiptTab],
+                                      numberFormat: fmt.k as any,
+                                      seqDigits: fmt.defaultDigits,
+                                      startSeq: prev.types[activeReceiptTab].startSeq ?? fmt.defaultStart,
+                                    }
+                                  }
+                                }));
+                              }}
+                              className={`p-2.5 rounded-xl border text-left transition ${isSelected ? 'bg-[#EFF6FF] border-[#1E88E5] text-[#1565C0]' : 'bg-gray-50 border-gray-200 text-gray-700'}`}
+                            >
+                              <p className="text-[11.5px] font-bold">{fmt.title}</p>
+                              <p className="text-[10.5px] opacity-85 mt-0.5">উদাহরণ: <span className="font-bold">{fmt.ex}</span></p>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* নম্বর কাস্টমাইজেশন */}
+                      <div className="bg-gray-50 p-2.5 rounded-xl border border-gray-200 flex flex-col gap-2.5">
+                        <p className="text-[10.5px] font-bold text-[#0B5C47]">নম্বর কাস্টমাইজেশন</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[10px] font-bold text-gray-600 mb-1 block">ব্র্যান্ড সংক্ষিপ্ত রূপ</label>
+                            <input
+                              type="text"
+                              maxLength={6}
+                              value={receiptSettings.types[activeReceiptTab].brandCode ?? receiptSettings.badgeText}
+                              onChange={e => updateTypeConfig('brandCode', e.target.value.toUpperCase())}
+                              placeholder="DA"
+                              className="w-full border border-gray-300 rounded-lg p-1.5 text-xs font-bold bg-white outline-none focus:border-[#0B5C47]"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold text-gray-600 mb-1 block">সংক্ষিপ্ত কোড (INV / REC)</label>
+                            <input
+                              type="text"
+                              maxLength={10}
+                              value={(receiptSettings.types[activeReceiptTab].prefix || '').replace(/[-/]+$/g, '')}
+                              onChange={e => updateTypeConfig('prefix', e.target.value.toUpperCase())}
+                              placeholder="INV"
+                              className="w-full border border-gray-300 rounded-lg p-1.5 text-xs font-bold bg-white outline-none focus:border-[#0B5C47]"
+                            />
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {['INV', 'REC', 'PUR', 'TRN', 'EXP'].map(code => (
+                                <button
+                                  key={code}
+                                  type="button"
+                                  onClick={() => updateTypeConfig('prefix', code)}
+                                  className="text-[9px] px-1.5 py-0.5 rounded bg-white border border-gray-200 text-gray-600 font-bold hover:border-[#0B5C47]"
+                                >
+                                  {code}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2">
+                          <div>
+                            <label className="text-[10px] font-bold text-gray-600 mb-1 block">শুরুর ক্রমিক নম্বর</label>
+                            <input
+                              type="number"
+                              min={1}
+                              value={receiptSettings.types[activeReceiptTab].startSeq ?? 1}
+                              onChange={e => updateTypeConfig('startSeq', Math.max(1, Number(e.target.value) || 1))}
+                              className="w-full border border-gray-300 rounded-lg p-1.5 text-xs font-bold bg-white outline-none focus:border-[#0B5C47]"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold text-gray-600 mb-1 block">ডিজিট (০ সহ)</label>
+                            <select
+                              value={receiptSettings.types[activeReceiptTab].seqDigits ?? (receiptSettings.types[activeReceiptTab].numberFormat === 'brand_year_seq' ? 4 : receiptSettings.types[activeReceiptTab].numberFormat === 'day_month_seq' ? 3 : 0)}
+                              onChange={e => updateTypeConfig('seqDigits', Number(e.target.value))}
+                              className="w-full border border-gray-300 rounded-lg p-1.5 text-xs font-bold bg-white outline-none focus:border-[#0B5C47]"
+                            >
+                              <option value={0}>সাধারণ (1050)</option>
+                              <option value={3}>৩ ডিজিট (001)</option>
+                              <option value={4}>৪ ডিজিট (0001)</option>
+                              <option value={5}>৫ ডিজিট (00001)</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold text-gray-600 mb-1 block">মাঝের চিহ্ন</label>
+                            <div className="grid grid-cols-2 gap-1">
+                              {['-', '/'].map(s => (
+                                <button
+                                  key={s}
+                                  type="button"
+                                  onClick={() => updateTypeConfig('separator', s)}
+                                  className={`py-1.5 rounded-lg border text-xs font-bold ${(receiptSettings.types[activeReceiptTab].separator || '-') === s ? 'bg-[#0B5C47] text-white border-[#0B5C47]' : 'bg-white text-gray-600 border-gray-300'}`}
+                                >
+                                  {s}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+
+                        {receiptSettings.types[activeReceiptTab].numberFormat === 'custom' && (
+                          <div>
+                            <label className="text-[10px] font-bold text-gray-600 mb-1 block">কাস্টম প্যাটার্ন</label>
+                            <input
+                              type="text"
+                              value={receiptSettings.types[activeReceiptTab].customTemplate || '{CODE}-{YYYY}-{SEQ}'}
+                              onChange={e => updateTypeConfig('customTemplate', e.target.value)}
+                              className="w-full border border-gray-300 rounded-lg p-1.5 text-xs font-bold bg-white outline-none focus:border-[#0B5C47]"
+                            />
+                            <div className="flex flex-wrap gap-1 mt-1.5">
+                              {[
+                                { tag: '{BRAND}', label: 'ব্র্যান্ড' },
+                                { tag: '{CODE}', label: 'কোড' },
+                                { tag: '{YYYY}', label: 'সাল' },
+                                { tag: '{DDMM}', label: 'তারিখ/মাস' },
+                                { tag: '{SEQ}', label: 'ক্রমিক' },
+                              ].map(t => (
+                                <button
+                                  key={t.tag}
+                                  type="button"
+                                  onClick={() => updateTypeConfig('customTemplate', (receiptSettings.types[activeReceiptTab].customTemplate || '') + t.tag)}
+                                  className="text-[9.5px] px-2 py-0.5 rounded bg-white border border-gray-300 text-[#0B5C47] font-bold"
+                                >
+                                  + {t.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* সেকশন শো/হাইড টগল */}
+                  <div className="bg-white rounded-2xl p-3.5 border border-gray-200 shadow-sm flex flex-col gap-2">
+                    <div className="flex items-center gap-2 border-b border-gray-100 pb-2 mb-1">
+                      <span className="w-1.5 h-4 bg-[#1E88E5] rounded-full" />
+                      <h3 className="text-xs font-bold text-[#0F2A3D]">এই রিসিপ্টে যা যা দেখাবে</h3>
+                    </div>
+
+                    {[
+                      { key: 'showPartyInfo', label: 'পার্টি / ক্রেতা / খরচের তথ্য দেখান' },
+                      { key: 'showOfficer', label: 'অফিসারের তথ্য দেখান' },
+                      ...(activeReceiptTab !== 'expense' ? [{ key: 'showTransport', label: 'পরিবহন (গাড়ি/ড্রাইভার) তথ্য দেখান' }] : []),
+                      { key: 'showPriceAndTotals', label: activeReceiptTab === 'transfer' ? 'দর ও টাকার হিসাব দেখান (বন্ধ রাখলে শুধু পরিমাণ দেখাবে)' : 'দর ও মোট টাকার হিসাব দেখান' },
+                      ...(activeReceiptTab === 'sale' || activeReceiptTab === 'purchase' ? [{ key: 'showPreviousDue', label: 'পূর্বের বাকি + সর্বমোট বাকি দেখান' }] : []),
+                      { key: 'showInWords', label: 'টাকা কথায় দেখান' },
+                      { key: 'showWatermark', label: 'মাঝখানে হালকা ওয়াটারমার্ক দেখান' },
+                      { key: 'showSignatures', label: 'স্বাক্ষরের সারি দেখান' },
+                    ].map(item => {
+                      const checked = Boolean((receiptSettings.types[activeReceiptTab] as any)[item.key]);
+                      return (
+                        <div
+                          key={item.key}
+                          onClick={() => updateTypeConfig(item.key as any, !checked)}
+                          className="flex justify-between items-center cursor-pointer py-2 px-2.5 rounded-xl bg-gray-50 border border-gray-100 active:scale-[0.99] transition"
+                        >
+                          <span className="text-xs font-bold text-gray-700 pr-2">{item.label}</span>
+                          <div className={`w-10 h-5 rounded-full relative shrink-0 transition ${checked ? 'bg-[#0B5C47]' : 'bg-gray-300'}`}>
+                            <div className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-all ${checked ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+
+            </div>
+          </div>
+
+          {/* বটম স্থির বাটন বার */}
+          <div className="fixed bottom-0 left-0 w-full bg-white border-t border-gray-200 p-3 z-30 shadow-[0_-6px_20px_rgba(0,0,0,0.06)]">
+            <div className="max-w-3xl mx-auto flex gap-2.5">
+              <button
+                type="button"
+                onClick={() => setIsPreviewOpen(true)}
+                className="flex-1 bg-[#EFF6FF] text-[#1565C0] border border-[#1565C0]/30 py-3 rounded-xl font-bold shadow-sm flex justify-center items-center gap-1.5 text-xs active:scale-95 transition"
+              >
+                <Eye size={16}/> প্রিভিউ ({activeReceiptTab === 'sale' ? 'বিক্রি' : activeReceiptTab === 'purchase' ? 'ক্রয়' : activeReceiptTab === 'transfer' ? 'ট্রান্সফার' : 'খরচ'})
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveSettings}
+                disabled={isSavingSettings}
+                className="flex-1 bg-[#0B5C47] text-white py-3 rounded-xl font-bold shadow-md flex justify-center items-center gap-1.5 text-sm active:scale-95 transition disabled:opacity-60"
+              >
+                {isSavingSettings ? <Loader2 size={16} className="animate-spin"/> : <><Save size={16}/> সেভ করুন</>}
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* ================= লাইভ রিসিপ্ট প্রিভিউ ও টেস্ট প্রিন্ট ================= */}
+      <ReceiptModal
+        isOpen={isPreviewOpen}
+        onClose={() => setIsPreviewOpen(false)}
+        onCancel={() => setIsPreviewOpen(false)}
+        onFinalize={() => setIsPreviewOpen(false)}
+        isSaving={false}
+        previewOnly={true}
+        settingsOverride={{ ...receiptSettings, format: invoiceFormat }}
+        data={getSampleReceiptData(activeReceiptTab)}
+      />
 
     </div>
   );

@@ -1,151 +1,16 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { createPortal } from 'react-dom';
 import { 
-  ArrowLeft, Search, Trash2, Printer, Share2, 
-  CheckCircle, Truck, X, FileText, 
-  Filter, Tag, ShoppingBag, ChevronRight, Loader2, Download, Plus, Image as ImageIcon
+  ArrowLeft, Search, Trash2, 
+  CheckCircle, Truck, X, 
+  Filter, Tag, ShoppingBag, ChevronRight, Plus, Image as ImageIcon
 } from 'lucide-react';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
 import { toBangla, numberToWordsBn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
-
-const PAGE_W = 794;
-const PAGE_H = 1039;
-const INK = 'text-[#1B2A41]';
-const MUTED = 'text-[#4A5568]';
-const GOLD = '#B98F33';
-
-const formatTaka = (amount: number) => '৳ ' + (amount || 0).toLocaleString('bn-BD', { minimumFractionDigits: 0 });
-
-const RECEIPT_STYLES = `
-  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+Bengali:wght@400;500;600;700&display=swap');
-  .rm-paper, .rm-paper * { font-family: 'Noto Serif Bengali', Georgia, serif !important; }
-  #receipt-print-root { display: none; }
-  @media print {
-    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-    @page { size: A4; margin: 0; }
-    html, body { margin: 0 !important; padding: 0 !important; background: #fff !important; overflow: visible !important; }
-    body * { visibility: hidden; }
-    #receipt-print-root, #receipt-print-root * { visibility: visible; }
-    #receipt-print-root { display: block !important; position: absolute; left: 0; top: 0; width: 210mm; }
-    #receipt-print-root .rm-paper { break-inside: avoid; overflow: hidden; }
-  }
-`;
+import { ReceiptModal, getMergedReceiptSettings, formatReceiptNumber, type ReceiptData, type ReceiptTypeKey } from '../pages/ReceiptModal';
 
 export interface EngineProduct { id: string | number; name: string; category: string; company: string; stockQty: number; rate: number; unit: string; image_url?: string; }
 export interface EngineParty { id: string; name: string; phone: string; address: string; }
 export interface TransferItem { id: string | number; name: string; quantity: number; rate: number; unit: string; }
-
-// GatePassPaper (রিসিপ্ট ডিজাইন)
-const GatePassPaper = ({ 
-  title, partyLabel, partyName, partyPhone, partyAddress, officerName, officerPhone, 
-  vehicleNo, driverName, driverPhone, items, subTotal, deliveryCharge, 
-  cashReceived, dueAmount, paidInWords, remarks, challanNo, date, style 
-}: any) => {
-  const totalQty = items.reduce((acc: number, item: any) => acc + (Number(item.quantity) || 0), 0);
-  const CardTitle = ({ children }: { children: React.ReactNode }) => (
-    <div className="flex items-center gap-1.5 mb-1 pb-1 border-b border-[#E6DBBE]">
-      <span className="w-1.5 h-1.5 rotate-45" style={{ background: GOLD }} />
-      <h3 className={`font-bold text-[12px] ${INK}`}>{children}</h3>
-    </div>
-  );
-
-  return (
-    <div className="rm-paper bg-white text-[#1B2A41] relative" style={{ width: PAGE_W, minHeight: PAGE_H, padding: 14, fontSize: 12, lineHeight: 1.4, ...style }}>
-      <div className="flex flex-col h-full" style={{ border: `1.5px solid ${GOLD}`, padding: '20px 24px', height: '100%' }}>
-        
-        <div className="grid grid-cols-[1.5fr,1fr] gap-4 items-center">
-          <div className="flex items-center gap-3">
-            <div className="w-[50px] h-[50px] rounded-full bg-[#FBF5E6] flex items-center justify-center border-2" style={{ borderColor: GOLD }}><div className="text-center font-bold text-[#1B2A41]">DA<br/><span className="text-[7px]" style={{color: GOLD}}>AGRO</span></div></div>
-            <div>
-              <h1 className={`text-[20px] font-bold uppercase ${INK}`}>DREAM AGRO & FISHERIES</h1>
-              <p className="text-[11px] text-[#2B5C8A] font-semibold mt-0.5">ক্রয়বিক্রয় ও পরিষেবা: উন্নতমানের পোল্ট্রি, ফিশ ফিড ও এগ্রো</p>
-              <p className={`text-[10px] mt-0.5 ${MUTED}`}>ফোন: 01774188741 | hishab.offical@gmail.com</p>
-            </div>
-          </div>
-          <div className="rounded border border-[#E6DBBE] bg-white">
-            <div className="flex justify-between px-3 py-1.5 bg-[#FBF5E6] border-b border-[#E6DBBE]"><span className={`font-bold text-[12px] ${INK}`}>{title}</span><span className="text-[10px] text-[#7A5E1E]">GATE PASS</span></div>
-            <div className="px-3 py-1.5 text-[11px] space-y-0.5">
-              <div className="flex justify-between"><span className={MUTED}>রিসিট নং:</span><span className="font-bold">#{challanNo}</span></div>
-              <div className="flex justify-between"><span className={MUTED}>তারিখ:</span><span>{date}</span></div>
-            </div>
-          </div>
-        </div>
-
-        <div className="my-2 border-t border-b py-1" style={{ borderColor: GOLD }} />
-
-        <div className="grid grid-cols-3 gap-2 text-[11px]">
-          <div className="border border-[#DDE3EC] bg-[#F7F9FC] p-2 rounded">
-            <CardTitle>{partyLabel} তথ্য</CardTitle>
-            <p className="font-bold text-[12px]">{partyName || 'N/A'}</p>
-            <p><span className={MUTED}>ফোন: </span>{partyPhone || 'N/A'}</p>
-            <p className="truncate"><span className={MUTED}>ঠিকানা: </span>{partyAddress || 'N/A'}</p>
-          </div>
-          <div className="border border-[#DDE3EC] bg-[#F7F9FC] p-2 rounded">
-            <CardTitle>অফিসার তথ্য</CardTitle>
-            <p className="font-bold text-[12px]">{officerName}</p>
-            <p><span className={MUTED}>ফোন: </span>{officerPhone}</p>
-          </div>
-          <div className="border border-[#EADFC0] bg-[#FDFAF0] p-2 rounded">
-            <CardTitle>পরিবহন তথ্য</CardTitle>
-            <p><span className={MUTED}>গাড়ি: </span><span className="font-semibold">{vehicleNo || 'N/A'}</span></p>
-            <p><span className={MUTED}>ড্রাইভার: </span>{driverName || 'N/A'}</p>
-            <p><span className={MUTED}>ফোন: </span>{driverPhone || 'N/A'}</p>
-          </div>
-        </div>
-
-        <div className="flex-1 mt-3">
-          <table className="w-full border-collapse text-[11px] border border-[#CBD3DF] text-center">
-            <thead><tr className="bg-[#EAF0F8] border-b-2" style={{ borderColor: GOLD }}>
-              <th className="py-1 border-r w-8">#</th><th className="py-1 text-left px-2 border-r">পণ্য</th><th className="py-1 border-r w-20">পরিমাণ</th><th className="py-1 border-r w-16">দর</th><th className="py-1 w-24">মোট</th>
-            </tr></thead>
-            <tbody>
-              {items.map((item: any, i: number) => (
-                <tr key={i} className="border-b border-[#E3E8F0]">
-                  <td className={`py-1 border-r ${MUTED}`}>{(i + 1).toLocaleString('bn-BD', { minimumIntegerDigits: 2 })}</td>
-                  <td className="py-1 px-2 border-r font-semibold text-left">{item.name}</td>
-                  <td className="py-1 border-r">{toBangla(item.quantity)} {item.unit}</td>
-                  <td className="py-1 border-r">{toBangla(item.rate)}</td>
-                  <td className="py-1 font-bold">{toBangla((Number(item.quantity)||0) * (Number(item.rate)||0))}</td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot><tr className="bg-[#F3F6FB] font-bold border-t" style={{ borderColor: GOLD }}>
-              <td colSpan={2} className="py-1.5 px-2 text-right border-r">সর্বমোট:</td>
-              <td className="py-1.5 border-r">{toBangla(totalQty)} পিস</td>
-              <td className="py-1.5 border-r text-right pr-2">বিল:</td>
-              <td className="py-1.5">{formatTaka(subTotal)}</td>
-            </tr></tfoot>
-          </table>
-        </div>
-
-        <div className="grid grid-cols-[1.35fr,1fr] gap-3 mt-3 items-start text-[11px]">
-          <div className="space-y-1.5">
-            <div className="border border-[#DDE3EC] bg-[#F7F9FC] px-2 py-1.5"><span className={MUTED}>কথায়: </span><span className="font-bold">{paidInWords}</span></div>
-            <div className="border border-[#EADFC0] bg-[#FDFAF0] px-2 py-1.5 border-l-4" style={{ borderLeftColor: GOLD }}><p className="font-bold">নোট:</p><p>{remarks || 'N/A'}</p></div>
-          </div>
-          <div className="border border-[#CBD3DF] rounded overflow-hidden bg-white">
-            <div className="px-2 py-1.5 space-y-0.5">
-              <div className="flex justify-between"><span className={MUTED}>মোট বিল:</span><span className="font-bold">{formatTaka(subTotal)}</span></div>
-              {deliveryCharge > 0 && <div className="flex justify-between"><span className={MUTED}>ডেলিভারি:</span><span>{formatTaka(deliveryCharge)}</span></div>}
-              <div className="flex justify-between text-[#1565C0]"><span className={MUTED}>জমা:</span><span>- {formatTaka(cashReceived)}</span></div>
-            </div>
-            <div className="px-2 py-2 flex justify-between bg-[#FBF1D6] border-t" style={{ borderColor: GOLD }}>
-              <span className="font-bold text-[12px]">বাকি:</span><span className="font-bold text-[15px]">{formatTaka(Math.max(0, dueAmount))}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-4 text-center text-[11px] mt-4 pt-8 border-t border-dashed border-gray-300">
-          <div><p className="border-t-2 border-gray-400 pt-1 font-bold">{partyLabel} স্বাক্ষর</p><p className={MUTED}>{partyName}</p></div>
-          <div><p className="border-t-2 border-gray-400 pt-1 font-bold">ড্রাইভারের স্বাক্ষর</p><p className={MUTED}>{driverName || '\u00A0'}</p></div>
-          <div><p className="border-t-2 pt-1 font-bold" style={{ borderColor: GOLD }}>অনুমোদনকারী</p><p className={MUTED}>ডিপো ম্যানেজার</p></div>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 // Transaction Engine
 interface TransactionEngineProps {
@@ -162,7 +27,7 @@ interface TransactionEngineProps {
 export default function TransactionEngine({ 
   mode, title, partyLabel, products, parties, onBack, onNavigate, onFinalize 
 }: TransactionEngineProps) {
-  const { user } = useAuth();
+  const { user, activeBusiness } = useAuth();
 
   const [step, setStep] = useState<number>(1);
   const [cart, setCart] = useState<TransferItem[]>([]);
@@ -198,16 +63,9 @@ export default function TransactionEngine({
   const [isGatePassReady, setIsGatePassReady] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   
-  const previewRef = useRef<HTMLDivElement>(null);
-  const [previewScale, setPreviewScale] = useState(1);
-  const [challanNo] = useState(() => "INV-" + Math.floor(10000 + Math.random() * 90000));
+  const receiptType: ReceiptTypeKey = mode === 'purchase' ? 'purchase' : (mode === 'dealer_transfer' || mode === 'depot_transfer') ? 'transfer' : 'sale';
   const currentDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-
-  useEffect(() => {
-    if (!isGatePassReady) return;
-    const update = () => setPreviewScale(Math.min(1, ((previewRef.current?.clientWidth ?? PAGE_W) - 16) / PAGE_W));
-    update(); window.addEventListener('resize', update); return () => window.removeEventListener('resize', update);
-  }, [isGatePassReady]);
+  const currentTime = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
   useEffect(() => {
     if (partyId) {
@@ -245,9 +103,29 @@ export default function TransactionEngine({
     setIsGatePassReady(true);
   };
 
+  const { formattedNo, seqStorageKey, nextSeq } = useMemo(() => {
+    const cached = activeBusiness?.id ? localStorage.getItem(`receipt_settings_${activeBusiness.id}`) : null;
+    const merged = getMergedReceiptSettings(cached ? JSON.parse(cached) : null, activeBusiness);
+    const cfg = merged.types[receiptType];
+    const now = new Date();
+    const ddmm = `${String(now.getDate()).padStart(2, '0')}${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const key = cfg?.numberFormat === 'day_month_seq'
+      ? `receipt_seq_${activeBusiness?.id || 'default'}_${receiptType}_${ddmm}`
+      : `receipt_seq_${activeBusiness?.id || 'default'}_${receiptType}`;
+    const savedSeq = Number(localStorage.getItem(key) || 0);
+    const startSeq = Number(cfg?.startSeq) || 1;
+    const currentSeq = Math.max(startSeq, savedSeq || startSeq);
+    return {
+      formattedNo: formatReceiptNumber(cfg, currentSeq, merged.badgeText),
+      seqStorageKey: key,
+      nextSeq: currentSeq + 1,
+    };
+  }, [activeBusiness, receiptType, isGatePassReady]);
+
   const handleFinalize = () => {
     setIsSaving(true);
     setTimeout(() => {
+      localStorage.setItem(seqStorageKey, String(nextSeq));
       onFinalize({ 
         mode, 
         cart, 
@@ -271,28 +149,61 @@ export default function TransactionEngine({
     }, 1000);
   };
 
-  const handlePrint = async () => { try { await document.fonts?.ready; } catch (e) {} window.print(); };
-  const handleDownload = async () => {
-    const el = document.getElementById('receipt-print-root'); if (!el) return;
-    const canvas = await html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
-    const pdf = new jsPDF('p', 'mm', 'a4');
-    pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, pdf.internal.pageSize.getWidth(), (canvas.height * pdf.internal.pageSize.getWidth()) / canvas.width);
-    pdf.save(`Receipt-${challanNo}.pdf`);
-  };
+  const receiptData: ReceiptData = useMemo(() => {
+    const totalQty = cart.reduce((acc, item) => acc + (Number(item.quantity) || 0), 0);
+    const totalBags = cart.filter(i => i.unit?.includes('বস্তা') || i.unit?.toLowerCase().includes('bag')).reduce((a, i) => a + (Number(i.quantity) || 0), 0);
+    const totalPieces = totalQty - totalBags;
+    const paid = Number(cashReceived) || 0;
 
-  const receiptProps = {
-    title, partyLabel, partyName, partyPhone, partyAddress,
-    officerName: user?.user_metadata?.name || user?.email || 'অফিসার',
-    officerPhone: user?.user_metadata?.phone || 'N/A',
-    vehicleNo, driverName: vDriverName, driverPhone: vDriverPhone, items: cart,
-    subTotal, deliveryCharge: deliveryVal, cashReceived: Number(cashReceived) || 0, 
-    dueAmount, paidInWords: numberToWordsBn(Number(cashReceived) || 0), remarks,
-    challanNo, date: currentDate
-  };
+    return {
+      type: receiptType,
+      partyLabel,
+      invoiceNo: formattedNo,
+      date: currentDate,
+      receiptTime: currentTime,
+      status: dueAmount <= 0 ? 'পরিশোধিত' : paid > 0 ? 'আংশিক জমা' : 'বাকি',
+      shopName: activeBusiness?.name || 'DREAM AGRO & FISHERIES',
+      shopAddress: (activeBusiness as any)?.address || '',
+      shopPhone: (activeBusiness as any)?.phone || '',
+      shopEmail: (activeBusiness as any)?.email || '',
+      customerName: partyName || 'N/A',
+      proprietor: 'N/A',
+      customerPhone: partyPhone || 'N/A',
+      customerAddress: partyAddress || 'N/A',
+      marketName: 'N/A',
+      officerName: user?.user_metadata?.name || user?.email || 'অফিসার',
+      officerPhone: user?.user_metadata?.phone || 'N/A',
+      officerEmail: user?.email || 'N/A',
+      vehicleNo,
+      driverName: vDriverName,
+      driverPhone: vDriverPhone,
+      transportRent: deliveryVal,
+      deliveryCharge: deliveryVal,
+      items: cart.map((item, idx) => ({
+        id: String(item.id || idx),
+        name: item.name,
+        quantity: Number(item.quantity) || 0,
+        unit: item.unit,
+        unitPrice: Number(item.rate) || 0,
+        totalPrice: (Number(item.quantity) || 0) * (Number(item.rate) || 0),
+      })),
+      totalBags,
+      totalPieces,
+      subtotal: subTotal,
+      discount: discountVal,
+      grandTotal: finalTotal,
+      paidAmount: paid,
+      dueAmount: Math.max(0, dueAmount),
+      paidInWords: numberToWordsBn(paid),
+      note: remarks,
+      batch,
+      challan,
+    };
+  }, [activeBusiness, receiptType, partyLabel, formattedNo, currentDate, currentTime, dueAmount, cashReceived, partyName, partyPhone, partyAddress, user, vehicleNo, vDriverName, vDriverPhone, deliveryVal, cart, subTotal, discountVal, finalTotal, remarks, batch, challan]);
+
 
   return (
     <div className="min-h-screen bg-[#EFF6F3] text-[#0F2A3D] font-serif flex flex-col">
-      {createPortal(<style>{RECEIPT_STYLES}</style>, document.head)}
 
       <header className="bg-gradient-to-r from-[#1B5E20] via-[#00796B] to-[#0D3B80] text-white shadow-md sticky top-0 z-40 print:hidden">
         <div className="max-w-5xl mx-auto px-4 py-2.5 flex items-center justify-between">
@@ -526,31 +437,14 @@ export default function TransactionEngine({
         </div>
       )}
 
-      {/* Preview Modal */}
-      {isGatePassReady && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-2 print:hidden">
-          <div className="bg-white w-full max-w-[860px] rounded-xl shadow-2xl flex flex-col max-h-[96vh]">
-            <div className="flex items-center justify-between p-3 bg-[#FBF5E6] border-b"><div className="flex items-center gap-2"><FileText size={16}/><span className="font-bold text-sm">প্রিভিউ (A4)</span></div><button onClick={() => setIsGatePassReady(false)}><X size={20}/></button></div>
-            <div ref={previewRef} className="overflow-auto bg-slate-100 p-2 flex-1">
-              <div className="mx-auto" style={{ width: PAGE_W * previewScale, height: PAGE_H * previewScale }}>
-                <GatePassPaper {...receiptProps} style={{ transform: `scale(${previewScale})`, transformOrigin: 'top left' }} />
-              </div>
-            </div>
-            <div className="p-3 bg-white border-t flex flex-col gap-2">
-              <div className="flex gap-2">
-                <button onClick={handlePrint} className="flex-1 bg-stone-100 py-2 rounded-lg font-medium flex justify-center gap-1"><Printer size={16}/> প্রিন্ট</button>
-                <button onClick={handleDownload} className="flex-1 bg-blue-50 text-blue-700 py-2 rounded-lg font-medium flex justify-center gap-1"><Download size={16}/> PDF</button>
-                <button onClick={() => alert('শেয়ারিং...')} className="flex-1 bg-green-50 text-green-700 py-2 rounded-lg font-medium flex justify-center gap-1"><Share2 size={16}/> শেয়ার</button>
-              </div>
-              <div className="flex gap-2 mt-1">
-                <button onClick={() => { setIsGatePassReady(false); setStep(1); setCart([]); }} className="flex-1 bg-red-50 text-red-600 font-bold py-2.5 rounded-lg border border-red-200">বাতিল</button>
-                <button onClick={handleFinalize} disabled={isSaving} className="flex-[2] bg-[#0A2540] text-white font-bold py-2.5 rounded-lg flex justify-center gap-2">{isSaving ? <Loader2 className="animate-spin" size={16}/> : <CheckCircle size={16}/>} নিশ্চিত করুন</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-      {isGatePassReady && createPortal(<div id="receipt-print-root"><GatePassPaper {...receiptProps} /></div>, document.body)}
+      <ReceiptModal
+        isOpen={isGatePassReady}
+        onClose={() => setIsGatePassReady(false)}
+        onCancel={() => { setIsGatePassReady(false); setStep(1); setCart([]); }}
+        onFinalize={handleFinalize}
+        isSaving={isSaving}
+        data={receiptData}
+      />
     </div>
   );
 }

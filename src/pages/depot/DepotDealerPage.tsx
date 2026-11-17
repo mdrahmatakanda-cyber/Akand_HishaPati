@@ -3,7 +3,8 @@ import {
   ArrowLeft, Search, Plus, X, Loader2, 
   User, Phone, MapPin, Wallet, 
   ReceiptText, Clock, CheckCircle2, AlertTriangle, ArrowRightLeft,
-  Image as ImageIcon, FileText, Truck, Edit3, Store, Building2, Trash2, ExternalLink
+  Image as ImageIcon, FileText, Truck, Edit3, Store, Building2, Trash2, ExternalLink,
+  RotateCcw
 } from 'lucide-react';
 import { toBangla } from '../../lib/utils';
 import { useAppContext } from '../../context/AppContext';
@@ -61,11 +62,28 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
   const [editDealerImage, setEditDealerImage] = useState<File | null>(null);
   const [editDealerDoc, setEditDealerDoc] = useState<File | null>(null);
   const editImageInputRef = useRef<HTMLInputElement>(null);
+  const editDocInputRef = useRef<HTMLInputElement>(null);
 
   const [editDealerData, setEditDealerData] = useState({ name: '', phone: '', phone_2: '', area: '', dealer_code: '', previous_due: '' });
   const [paymentAmount, setPaymentAmount] = useState('');
   const [deleteConfirmType, setDeleteConfirmType] = useState<'dealer' | 'depot' | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // ✅ ডিলার ট্রান্সফার, রিটার্ন ও লেজার স্টেট
+  const [dealerLedger, setDealerLedger] = useState<any[]>([]);
+  const [depotProducts, setDepotProducts] = useState<any[]>([]);
+  const [ledgerTab, setLedgerTab] = useState<'all' | 'transfer' | 'payment_return'>('all');
+  const [dealerActionModal, setDealerActionModal] = useState<'transfer' | 'return' | null>(null);
+  const [isSavingAction, setIsSavingAction] = useState(false);
+  const [dealerActionForm, setDealerActionForm] = useState({
+    productId: '',
+    quantity: '',
+    unitPrice: '',
+    totalAmount: '',
+    paidNow: '',
+    isDamaged: true,
+    notes: ''
+  });
   
   const [toast, setToast] = useState<{ show: boolean, message: string, type: 'success' | 'error' }>({ show: false, message: '', type: 'success' });
   const showToast = (message: string, type: 'success' | 'error' = 'success') => setToast({ show: true, message, type });
@@ -104,9 +122,145 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
     fetchData();
   }, [isDemoMode, activeBusiness?.id]);
 
+  const fetchDealerDetailsData = async (dealerId: string) => {
+    try {
+      if (isDemoMode) {
+        setDepotProducts([{ id: 'p1', name: 'ডেমো ফিড (৫০ কেজি)', stock_quantity: 100, sale_price: 2200, purchase_price: 2000 }]);
+        return;
+      }
+      if (!activeBusiness?.id) return;
+
+      const [ledgerRes, prodRes] = await Promise.all([
+        supabase.from('depot_dealer_ledger').select('*').eq('business_id', activeBusiness.id).eq('dealer_id', dealerId).order('created_at', { ascending: false }),
+        supabase.from('products').select('*').eq('business_id', activeBusiness.id).order('name')
+      ]);
+
+      if (!ledgerRes.error) setDealerLedger(ledgerRes.data || []);
+      if (!prodRes.error) setDepotProducts(prodRes.data || []);
+    } catch (err) {
+      console.error('Dealer details fetch error:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedDealer) {
+      fetchDealerDetailsData(selectedDealer.id);
+      setLedgerTab('all');
+    } else {
+      setDealerLedger([]);
+    }
+  }, [selectedDealer?.id, isDemoMode, activeBusiness?.id]);
+
+  const openDealerActionModal = (type: 'transfer' | 'return') => {
+    setDealerActionForm({ productId: '', quantity: '', unitPrice: '', totalAmount: '', paidNow: '', isDamaged: true, notes: '' });
+    setDealerActionModal(type);
+  };
+
+  const handleSaveDealerAction = async () => {
+    if (!selectedDealer || !dealerActionModal) return;
+    const qty = Number(dealerActionForm.quantity) || 0;
+    const total = Number(dealerActionForm.totalAmount) || 0;
+    const paid = Number(dealerActionForm.paidNow) || 0;
+
+    if (dealerActionModal === 'transfer') {
+      if (!dealerActionForm.productId || qty <= 0 || total <= 0) {
+        return showToast('পণ্য, পরিমাণ এবং মোট টাকা দিন', 'error');
+      }
+    } else {
+      if (total <= 0) return showToast('রিটার্ন টাকার পরিমাণ দিন', 'error');
+    }
+
+    setIsSavingAction(true);
+    try {
+      const prod = depotProducts.find(p => p.id === dealerActionForm.productId);
+      const autoNote = [
+        prod ? `পণ্য: ${prod.name}` : '',
+        qty > 0 ? `পরিমাণ: ${qty}` : '',
+        dealerActionModal === 'return' ? (dealerActionForm.isDamaged ? 'ড্যামেজ রিটার্ন' : 'ভালো মাল রিটার্ন') : '',
+        dealerActionForm.notes
+      ].filter(Boolean).join(' | ');
+
+      const newDue = dealerActionModal === 'transfer'
+        ? Number(selectedDealer.due_balance || 0) + (total - paid)
+        : Number(selectedDealer.due_balance || 0) - total;
+
+      if (!isDemoMode && activeBusiness?.id) {
+        const { error: ledErr } = await supabase.from('depot_dealer_ledger').insert([{
+          business_id: activeBusiness.id,
+          dealer_id: selectedDealer.id,
+          product_id: dealerActionForm.productId || null,
+          entry_type: dealerActionModal,
+          is_damaged: dealerActionModal === 'return' ? dealerActionForm.isDamaged : false,
+          quantity: qty,
+          total_amount: total,
+          paid_amount: dealerActionModal === 'transfer' ? paid : 0,
+          notes: autoNote,
+          entry_date: new Date().toISOString().split('T')[0],
+        }]);
+        if (ledErr) throw ledErr;
+
+        // স্টক আপডেট: ট্রান্সফার হলে কমবে, ভালো মাল রিটার্ন হলে বাড়বে (ড্যামেজ রিটার্নে ভালো স্টক বাড়বে না)
+        if (prod && qty > 0) {
+          if (dealerActionModal === 'transfer') {
+            const newQty = Math.max(0, Number(prod.stock_quantity || 0) - qty);
+            const { error: pErr } = await supabase.from('products').update({ stock_quantity: newQty }).eq('id', prod.id);
+            if (pErr) throw pErr;
+          } else if (dealerActionModal === 'return' && !dealerActionForm.isDamaged) {
+            const newQty = Number(prod.stock_quantity || 0) + qty;
+            const { error: pErr } = await supabase.from('products').update({ stock_quantity: newQty }).eq('id', prod.id);
+            if (pErr) throw pErr;
+          }
+        }
+
+        // ডিলারের বাকি আপডেট
+        const { error: dErr } = await supabase.from('dealers').update({ due_balance: newDue }).eq('id', selectedDealer.id);
+        if (dErr) throw dErr;
+
+        await fetchDealerDetailsData(selectedDealer.id);
+        fetchData();
+      } else {
+        setDealerLedger(prev => [{
+          id: Date.now().toString(),
+          entry_type: dealerActionModal,
+          is_damaged: dealerActionModal === 'return' ? dealerActionForm.isDamaged : false,
+          quantity: qty,
+          total_amount: total,
+          paid_amount: dealerActionModal === 'transfer' ? paid : 0,
+          notes: autoNote,
+          entry_date: new Date().toISOString().split('T')[0],
+        }, ...prev]);
+        setDealers(prev => prev.map(d => d.id === selectedDealer.id ? { ...d, due_balance: newDue } : d));
+      }
+
+      setSelectedDealer({ ...selectedDealer, due_balance: newDue });
+      showToast(dealerActionModal === 'transfer' ? 'মাল ট্রান্সফার সফল হয়েছে!' : 'রিটার্ন সফলভাবে সেভ হয়েছে!');
+      setDealerActionModal(null);
+    } catch (error: any) {
+      showToast('সেভ করতে সমস্যা হয়েছে: ' + error.message, 'error');
+    } finally {
+      setIsSavingAction(false);
+    }
+  };
+
+  // ✅ ডিলারের সংক্ষিপ্ত হিসাব
+  const totalTransferred = dealerLedger.filter(l => l.entry_type === 'transfer').reduce((s, l) => s + Number(l.total_amount || 0), 0);
+  const totalDealerPaid = dealerLedger.reduce((s, l) => {
+    if (l.entry_type === 'payment') return s + Number(l.total_amount || 0);
+    if (l.entry_type === 'transfer') return s + Number(l.paid_amount || 0);
+    return s;
+  }, 0);
+  const totalDealerReturned = dealerLedger.filter(l => l.entry_type === 'return').reduce((s, l) => s + Number(l.total_amount || 0), 0);
+
+  const filteredDealerLedger = useMemo(() => {
+    if (ledgerTab === 'transfer') return dealerLedger.filter(l => l.entry_type === 'transfer');
+    if (ledgerTab === 'payment_return') return dealerLedger.filter(l => l.entry_type === 'payment' || l.entry_type === 'return');
+    return dealerLedger;
+  }, [dealerLedger, ledgerTab]);
+
   const filteredList = useMemo(() => {
     if (activeTab === 'dealer') {
-      return dealers.filter(d => d.name.toLowerCase().includes(searchQuery.toLowerCase()) || (d.phone && d.phone.includes(searchQuery)));
+      const q = searchQuery.toLowerCase();
+      return dealers.filter(d => d.name.toLowerCase().includes(q) || (d.phone && d.phone.includes(searchQuery)) || (d.dealer_code && d.dealer_code.toLowerCase().includes(q)));
     } else {
       return depots.filter(d => d.name.toLowerCase().includes(searchQuery.toLowerCase()) || (d.depot_code && d.depot_code.toLowerCase().includes(searchQuery.toLowerCase())));
     }
@@ -248,14 +402,28 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
     setIsSaving(true);
     try {
       const amount = Number(paymentAmount);
+      const newDue = Number(selectedDealer.due_balance || 0) - amount;
+
       if (isDemoMode) {
-        setDealers(dealers.map(d => d.id === selectedDealer.id ? { ...d, due_balance: d.due_balance - amount } : d));
-        setSelectedDealer({ ...selectedDealer, due_balance: selectedDealer.due_balance - amount });
+        setDealers(dealers.map(d => d.id === selectedDealer.id ? { ...d, due_balance: newDue } : d));
+        setDealerLedger(prev => [{ id: Date.now().toString(), entry_type: 'payment', total_amount: amount, notes: 'ডিলার পেমেন্ট জমা', entry_date: new Date().toISOString().split('T')[0] }, ...prev]);
+        setSelectedDealer({ ...selectedDealer, due_balance: newDue });
       } else {
-        const { error } = await supabase.from('dealers').update({ due_balance: selectedDealer.due_balance - amount }).eq('id', selectedDealer.id);
+        const { error: ledErr } = await supabase.from('depot_dealer_ledger').insert([{
+          business_id: activeBusiness?.id,
+          dealer_id: selectedDealer.id,
+          entry_type: 'payment',
+          total_amount: amount,
+          notes: 'ডিলার পেমেন্ট জমা',
+          entry_date: new Date().toISOString().split('T')[0]
+        }]);
+        if (ledErr) throw ledErr;
+
+        const { error } = await supabase.from('dealers').update({ due_balance: newDue }).eq('id', selectedDealer.id);
         if (error) throw error;
         fetchData();
-        setSelectedDealer({ ...selectedDealer, due_balance: selectedDealer.due_balance - amount });
+        fetchDealerDetailsData(selectedDealer.id);
+        setSelectedDealer({ ...selectedDealer, due_balance: newDue });
       }
       setIsPaymentModalOpen(false); setPaymentAmount(''); showToast('টাকা জমা সফল হয়েছে!');
     } catch (error: any) { showToast(error.message, 'error'); } finally { setIsSaving(false); }
@@ -392,7 +560,7 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
 
             <div className="bg-white border border-da-cardBorder rounded-xl px-3 py-2 flex items-center gap-2 shadow-sm focus-within:border-da-blue shrink-0">
               <Search size={18} className="text-da-textMuted" />
-              <input type="text" placeholder="ডিলারের নাম বা মোবাইল খুঁজুন" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full outline-none text-sm bg-transparent" />
+              <input type="text" placeholder="ডিলারের নাম, আইডি বা মোবাইল খুঁজুন" value={searchQuery} onChange={e => setSearchQuery(e.target.value)} className="w-full outline-none text-sm bg-transparent" />
             </div>
 
             {isLoading ? (
@@ -510,27 +678,87 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
             </div>
 
             <div className="grid grid-cols-3 gap-1.5 shrink-0">
-              <button onClick={() => setIsPaymentModalOpen(true)} className="bg-da-green text-white py-2 rounded-lg font-bold shadow-sm flex flex-col items-center justify-center gap-1 active:scale-95 transition">
-                <Wallet size={16}/> <span className="text-[10px]">নতুন জমা</span>
-              </button>
-              <button onClick={() => onNavigate('sale')} className="bg-da-depotBlue text-white py-2 rounded-lg font-bold shadow-sm flex flex-col items-center justify-center gap-1 active:scale-95 transition">
-                <ReceiptText size={16}/> <span className="text-[10px]">নতুন বিক্রি</span>
-              </button>
-              <button onClick={() => onNavigate('depot')} className="bg-da-depotAmber text-da-depotNavy py-2 rounded-lg font-bold shadow-sm flex flex-col items-center justify-center gap-1 active:scale-95 transition">
+              <button onClick={() => openDealerActionModal('transfer')} className="bg-da-depotBlue text-white py-2.5 rounded-lg font-bold shadow-sm flex flex-col items-center justify-center gap-1 active:scale-95 transition">
                 <Truck size={16}/> <span className="text-[10px]">মাল ট্রান্সফার</span>
+              </button>
+              <button onClick={() => setIsPaymentModalOpen(true)} className="bg-da-green text-white py-2.5 rounded-lg font-bold shadow-sm flex flex-col items-center justify-center gap-1 active:scale-95 transition">
+                <Wallet size={16}/> <span className="text-[10px]">পেমেন্ট</span>
+              </button>
+              <button onClick={() => openDealerActionModal('return')} className="bg-red-600 text-white py-2.5 rounded-lg font-bold shadow-sm flex flex-col items-center justify-center gap-1 active:scale-95 transition">
+                <RotateCcw size={16}/> <span className="text-[10px]">রিটার্ন</span>
               </button>
             </div>
 
+            {/* ডিলারের সংক্ষিপ্ত হিসাব */}
+            <div className="bg-white rounded-xl border border-da-cardBorder shadow-sm p-2.5 shrink-0 mt-1">
+              <h3 className="font-bold text-[11px] text-da-textDark mb-2 flex items-center gap-1.5 border-b border-da-cardBorder pb-1.5">
+                <ReceiptText size={14} className="text-da-depotBlue"/> সংক্ষিপ্ত হিসাব {selectedDealer.dealer_code ? `(${selectedDealer.dealer_code})` : ''}
+              </h3>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-blue-50 p-2 rounded-lg border border-blue-200 flex flex-col items-center text-center">
+                  <span className="text-[9px] font-bold text-blue-700 mb-0.5">মোট মাল ট্রান্সফার</span>
+                  <span className="font-black text-sm text-blue-700">৳{toBangla(totalTransferred)}</span>
+                </div>
+                <div className="bg-emerald-50 p-2 rounded-lg border border-emerald-200 flex flex-col items-center text-center">
+                  <span className="text-[9px] font-bold text-emerald-700 mb-0.5">মোট পেমেন্ট / জমা</span>
+                  <span className="font-black text-sm text-emerald-700">৳{toBangla(totalDealerPaid)}</span>
+                </div>
+                <div className="bg-amber-50 p-2 rounded-lg border border-amber-200 flex flex-col items-center text-center">
+                  <span className="text-[9px] font-bold text-amber-800 mb-0.5">মোট রিটার্ন</span>
+                  <span className="font-black text-sm text-amber-700">৳{toBangla(totalDealerReturned)}</span>
+                </div>
+                <div className="bg-red-50 p-2 rounded-lg border border-red-200 flex flex-col items-center text-center">
+                  <span className="text-[9px] font-bold text-red-600 mb-0.5">বর্তমান বাকি</span>
+                  <span className="font-black text-sm text-red-600">৳{toBangla(selectedDealer.due_balance || 0)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* লেনদেনের ইতিহাস (বিক্রির খাতা ও পেমেন্ট/রিটার্ন ট্যাব) */}
             <div className="bg-white rounded-xl border border-da-cardBorder shadow-sm p-3 shrink-0 mt-1">
               <h3 className="font-bold text-sm text-da-textDark mb-2 flex items-center gap-2 border-b border-da-cardBorder pb-2">
                 <Clock size={16} className="text-da-depotBlue"/> লেনদেনের ইতিহাস
               </h3>
-              <div className="flex flex-col items-center py-6">
-                <div className="w-12 h-12 rounded-full bg-da-depotBg flex items-center justify-center mb-2">
-                  <ArrowRightLeft size={20} className="text-da-depotBlue/50" />
-                </div>
-                <p className="text-xs text-da-textMuted font-bold">এই ডিলারের কোনো লেনদেন পাওয়া যায়নি।</p>
+              <div className="grid grid-cols-3 gap-1 bg-da-depotBg p-1 rounded-lg mb-2.5">
+                <button onClick={() => setLedgerTab('all')} className={`py-1 rounded text-[10px] font-bold transition ${ledgerTab === 'all' ? 'bg-da-depotNavy text-white' : 'text-da-textMuted'}`}>সব ({toBangla(dealerLedger.length)})</button>
+                <button onClick={() => setLedgerTab('transfer')} className={`py-1 rounded text-[10px] font-bold transition ${ledgerTab === 'transfer' ? 'bg-da-depotBlue text-white' : 'text-da-textMuted'}`}>বিক্রির খাতা</button>
+                <button onClick={() => setLedgerTab('payment_return')} className={`py-1 rounded text-[10px] font-bold transition ${ledgerTab === 'payment_return' ? 'bg-da-green text-white' : 'text-da-textMuted'}`}>জমা ও রিটার্ন</button>
               </div>
+
+              {filteredDealerLedger.length === 0 ? (
+                <div className="flex flex-col items-center py-5">
+                  <div className="w-11 h-11 rounded-full bg-da-depotBg flex items-center justify-center mb-2">
+                    <ArrowRightLeft size={18} className="text-da-depotBlue/50" />
+                  </div>
+                  <p className="text-xs text-da-textMuted font-bold">এই ডিলারের কোনো লেনদেন পাওয়া যায়নি।</p>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  {filteredDealerLedger.map(item => (
+                    <div key={item.id} className="bg-da-depotBg border border-da-cardBorder rounded-lg p-2 flex justify-between items-center">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-7 h-7 rounded-full bg-white border border-da-cardBorder flex items-center justify-center shrink-0">
+                          {item.entry_type === 'transfer' ? <Truck size={13} className="text-da-depotBlue"/> : item.entry_type === 'return' ? <RotateCcw size={13} className="text-red-600"/> : <Wallet size={13} className="text-da-green"/>}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-bold text-[11px] text-da-textDark truncate">
+                            {item.entry_type === 'transfer' ? 'মাল ট্রান্সফার / বিক্রি' : item.entry_type === 'return' ? 'মাল রিটার্ন' : 'পেমেন্ট জমা'}
+                          </p>
+                          <p className="text-[9px] text-da-textMuted truncate">{item.entry_date} {item.notes ? `• ${item.notes}` : ''}</p>
+                        </div>
+                      </div>
+                      <div className="text-right shrink-0 pl-2">
+                        <p className={`font-black text-[11px] ${item.entry_type === 'transfer' ? 'text-da-depotBlue' : item.entry_type === 'return' ? 'text-red-600' : 'text-da-green'}`}>
+                          ৳{toBangla(item.total_amount || 0)}
+                        </p>
+                        {item.entry_type === 'transfer' && Number(item.paid_amount) > 0 && (
+                          <p className="text-[8px] font-bold text-da-green">জমা: ৳{toBangla(item.paid_amount)}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </>
         )}
@@ -729,6 +957,11 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
               {!isEditingProfile ? (
                 <>
                   <h2 className="font-black text-xl text-da-textDark">{selectedDealer.name}</h2>
+                  {selectedDealer.dealer_code && (
+                    <span className="text-xs font-bold text-da-depotBlue bg-da-depotBlue/10 px-2 py-0.5 rounded-full mt-1 border border-da-depotBlue/20">
+                      {selectedDealer.dealer_code}
+                    </span>
+                  )}
                   <div className="w-full mt-5 flex flex-col gap-3">
                     <div className="flex items-center gap-3 bg-da-depotBg p-3 rounded-lg border border-da-cardBorder">
                       <Phone className="text-da-depotNavy" size={18} />
@@ -746,6 +979,27 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
                         </div>
                       </div>
                     )}
+                    {Array.isArray(selectedDealer.documents) && selectedDealer.documents.length > 0 && (
+                      <div className="bg-da-depotBg p-3 rounded-lg border border-da-cardBorder flex items-start gap-2.5">
+                        <FileText className="text-da-depotNavy shrink-0 mt-0.5" size={18} />
+                        <div className="flex-1 text-left">
+                          <p className="text-[10px] text-da-textMuted font-bold mb-1">সংযুক্ত ডকুমেন্ট</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {selectedDealer.documents.map((doc: string, idx: number) => (
+                              <button
+                                key={idx}
+                                type="button"
+                                onClick={() => handleViewDocument(doc)}
+                                disabled={loadingDocKey === doc}
+                                className="text-xs font-bold text-da-depotBlue bg-white px-2.5 py-1 rounded border border-da-cardBorder flex items-center gap-1 active:scale-95 transition"
+                              >
+                                {loadingDocKey === doc ? <Loader2 size={12} className="animate-spin" /> : <ExternalLink size={12} />} ডকুমেন্ট দেখুন
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </>
               ) : (
@@ -760,6 +1014,23 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
                     <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">পূর্বের বাকি</label><input type="number" value={editDealerData.previous_due} onChange={e => setEditDealerData({...editDealerData, previous_due: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
                   </div>
                   <div><label className="text-[11px] font-bold text-da-textMuted mb-1 block">ঠিকানা</label><input type="text" value={editDealerData.area} onChange={e => setEditDealerData({...editDealerData, area: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" /></div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-da-textMuted mb-1 block">ডকুমেন্ট (PDF / ছবি)</label>
+                    <button
+                      type="button"
+                      onClick={() => editDocInputRef.current?.click()}
+                      className="w-full border border-dashed border-da-cardBorder rounded-lg p-2.5 flex items-center justify-center gap-2 text-da-textMuted hover:border-da-depotBlue transition"
+                    >
+                      <FileText size={16} className={editDealerDoc ? 'text-da-green' : ''} />
+                      <span className="text-xs font-bold truncate">
+                        {editDealerDoc
+                          ? editDealerDoc.name
+                          : (Array.isArray(selectedDealer.documents) && selectedDealer.documents.length > 0 ? 'ডকুমেন্ট পরিবর্তন করুন' : 'ডকুমেন্ট (PDF) আপলোড করুন')}
+                      </span>
+                    </button>
+                    <input type="file" ref={editDocInputRef} onChange={e => setEditDealerDoc(e.target.files?.[0] || null)} accept=".pdf,image/*" className="hidden" />
+                  </div>
                 </div>
               )}
             </div>
@@ -806,6 +1077,128 @@ export default function DepotDealerPage({ onBack, onNavigate }: Props) {
             <div className="p-3 border-t border-da-cardBorder bg-da-depotBg flex gap-2">
               <button onClick={() => setIsPaymentModalOpen(false)} className="flex-1 bg-white border border-da-cardBorder text-da-textMuted py-2 rounded-xl font-bold">বাতিল</button>
               <button onClick={handlePayment} disabled={isSaving} className="flex-1 bg-da-green text-white py-2 rounded-xl font-bold shadow-md flex justify-center items-center">{isSaving ? <Loader2 size={16} className="animate-spin"/> : 'জমা করুন'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ডিলার মাল ট্রান্সফার ও রিটার্ন মডাল */}
+      {dealerActionModal && selectedDealer && (
+        <div className="fixed inset-0 bg-black/60 z-[105] flex justify-center items-end sm:items-center backdrop-blur-sm">
+          <div className="bg-white w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl overflow-hidden flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[90dvh]">
+            <div className={`${dealerActionModal === 'transfer' ? 'bg-da-depotNavy' : 'bg-red-600'} p-3 flex justify-between items-center text-white shrink-0`}>
+              <h2 className="font-bold text-sm flex items-center gap-2">
+                {dealerActionModal === 'transfer' ? <><Truck size={16}/> মাল ট্রান্সফার (ডিলার)</> : <><RotateCcw size={16}/> মাল রিটার্ন (ডিলার)</>}
+              </h2>
+              <button onClick={() => setDealerActionModal(null)} className="p-1 bg-white/20 rounded-full"><X size={16}/></button>
+            </div>
+
+            <div className="p-4 flex flex-col gap-3 overflow-y-auto">
+              <div className="bg-da-depotBg p-2.5 rounded-lg border border-da-cardBorder flex justify-between items-center text-xs font-bold">
+                <span className="text-da-depotNavy">{selectedDealer.name} {selectedDealer.dealer_code ? `(${selectedDealer.dealer_code})` : ''}</span>
+                <span className="text-da-red">বাকি: ৳{toBangla(selectedDealer.due_balance || 0)}</span>
+              </div>
+
+              {dealerActionModal === 'return' && (
+                <div>
+                  <label className="text-[11px] font-bold text-da-textMuted mb-1 block">রিটার্নের ধরন</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button type="button" onClick={() => setDealerActionForm({...dealerActionForm, isDamaged: true})} className={`py-2 rounded-lg text-xs font-bold border ${dealerActionForm.isDamaged ? 'bg-red-600 text-white border-red-600' : 'bg-white text-da-textDark border-da-cardBorder'}`}>ড্যামেজ মাল</button>
+                    <button type="button" onClick={() => setDealerActionForm({...dealerActionForm, isDamaged: false})} className={`py-2 rounded-lg text-xs font-bold border ${!dealerActionForm.isDamaged ? 'bg-da-depotBlue text-white border-da-depotBlue' : 'bg-white text-da-textDark border-da-cardBorder'}`}>ভালো মাল ফেরত</button>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="text-[11px] font-bold text-da-textMuted mb-1 block">পণ্য {dealerActionModal === 'transfer' ? '*' : '(ঐচ্ছিক)'}</label>
+                <select
+                  value={dealerActionForm.productId}
+                  onChange={e => {
+                    const pid = e.target.value;
+                    const p = depotProducts.find(item => item.id === pid);
+                    const rate = p ? String(p.sale_price || p.purchase_price || '') : '';
+                    const qty = Number(dealerActionForm.quantity) || 0;
+                    setDealerActionForm({
+                      ...dealerActionForm,
+                      productId: pid,
+                      unitPrice: rate,
+                      totalAmount: qty > 0 && rate ? String(qty * Number(rate)) : dealerActionForm.totalAmount
+                    });
+                  }}
+                  className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue bg-white"
+                >
+                  <option value="">-- পণ্য সিলেক্ট করুন --</option>
+                  {depotProducts.map(p => (
+                    <option key={p.id} value={p.id}>{p.name} (স্টক: {toBangla(p.stock_quantity || 0)})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[11px] font-bold text-da-textMuted mb-1 block">পরিমাণ {dealerActionModal === 'transfer' ? '*' : ''}</label>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    value={dealerActionForm.quantity}
+                    onChange={e => {
+                      const q = e.target.value;
+                      const rate = Number(dealerActionForm.unitPrice) || 0;
+                      setDealerActionForm({
+                        ...dealerActionForm,
+                        quantity: q,
+                        totalAmount: rate > 0 && Number(q) > 0 ? String(Number(q) * rate) : dealerActionForm.totalAmount
+                      });
+                    }}
+                    placeholder="0"
+                    className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-da-textMuted mb-1 block">একক দর (৳)</label>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    value={dealerActionForm.unitPrice}
+                    onChange={e => {
+                      const r = e.target.value;
+                      const q = Number(dealerActionForm.quantity) || 0;
+                      setDealerActionForm({
+                        ...dealerActionForm,
+                        unitPrice: r,
+                        totalAmount: q > 0 && Number(r) > 0 ? String(q * Number(r)) : dealerActionForm.totalAmount
+                      });
+                    }}
+                    placeholder="0"
+                    className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue"
+                  />
+                </div>
+              </div>
+
+              <div className={dealerActionModal === 'transfer' ? 'grid grid-cols-2 gap-2' : ''}>
+                <div>
+                  <label className="text-[11px] font-bold text-da-textMuted mb-1 block">{dealerActionModal === 'transfer' ? 'মোট বিল (৳) *' : 'রিটার্ন মূল্য (৳) *'}</label>
+                  <input type="number" inputMode="decimal" value={dealerActionForm.totalAmount} onChange={e => setDealerActionForm({...dealerActionForm, totalAmount: e.target.value})} placeholder="0" className="w-full border border-da-cardBorder rounded-lg p-2 text-sm font-bold outline-none focus:border-da-depotBlue" />
+                </div>
+                {dealerActionModal === 'transfer' && (
+                  <div>
+                    <label className="text-[11px] font-bold text-da-textMuted mb-1 block">নগদ জমা (৳)</label>
+                    <input type="number" inputMode="decimal" value={dealerActionForm.paidNow} onChange={e => setDealerActionForm({...dealerActionForm, paidNow: e.target.value})} placeholder="0" className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-green" />
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-da-textMuted mb-1 block">নোট / বিবরণ</label>
+                <input type="text" value={dealerActionForm.notes} onChange={e => setDealerActionForm({...dealerActionForm, notes: e.target.value})} placeholder="প্রয়োজনীয় নোট..." className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" />
+              </div>
+            </div>
+
+            <div className="p-3 border-t border-da-cardBorder bg-da-depotBg flex gap-2 shrink-0">
+              <button onClick={() => setDealerActionModal(null)} disabled={isSavingAction} className="flex-1 bg-white border border-da-cardBorder text-da-textMuted py-2 rounded-xl font-bold">বাতিল</button>
+              <button onClick={handleSaveDealerAction} disabled={isSavingAction} className={`flex-1 ${dealerActionModal === 'transfer' ? 'bg-da-depotBlue' : 'bg-red-600'} text-white py-2 rounded-xl font-bold shadow-md flex justify-center items-center`}>
+                {isSavingAction ? <Loader2 size={16} className="animate-spin"/> : 'সেভ করুন'}
+              </button>
             </div>
           </div>
         </div>

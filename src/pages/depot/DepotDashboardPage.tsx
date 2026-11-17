@@ -4,7 +4,7 @@ import {
   Warehouse, HandCoins, Building2, 
   Boxes, Handshake, Truck, ArrowRightLeft, ReceiptText, Banknote, Gift, BarChart3,
   Loader2, History, KeyRound, Recycle,
-  LayoutDashboard, BookOpenText, PackageSearch, LayoutGrid
+  LayoutDashboard, BookOpenText, PackageSearch, LayoutGrid, ShoppingBag
 } from 'lucide-react';
 import { toBangla } from '../../lib/utils';
 import { useAppContext } from '../../context/AppContext';
@@ -184,6 +184,24 @@ export default function DepotDashboardPage({ onNavigate, onToggleMode }: Props) 
               {isLoading ? <Loader2 size={18} className="animate-spin text-da-red mt-0.5" /> : <span className="font-black text-lg text-da-red leading-none mt-0.5">৳{toBangla(stats.periodExpense)}</span>}
             </div>
           </div>
+        </div>
+
+        {/* বিক্রির খাতা ও ক্রয়ের খাতা বাটন */}
+        <div className="grid grid-cols-2 gap-2 shrink-0 mt-1">
+          <button
+            onClick={() => onNavigate('depot_sales_khata')}
+            className="bg-gradient-to-r from-[#059669] to-[#047857] text-white py-2.5 px-2 rounded-xl shadow-sm flex items-center justify-center gap-2 active:scale-95 transition"
+          >
+            <BookOpenText size={18} />
+            <span className="text-[13px] font-bold">বিক্রির খাতা</span>
+          </button>
+          <button
+            onClick={() => onNavigate('depot_purchase_khata')}
+            className="bg-gradient-to-r from-[#2563EB] to-[#1D4ED8] text-white py-2.5 px-2 rounded-xl shadow-sm flex items-center justify-center gap-2 active:scale-95 transition"
+          >
+            <ShoppingBag size={18} />
+            <span className="text-[13px] font-bold">ক্রয়ের খাতা</span>
+          </button>
         </div>
 
         {/* মূল মডিউল গ্রিড (১৩টি) */}

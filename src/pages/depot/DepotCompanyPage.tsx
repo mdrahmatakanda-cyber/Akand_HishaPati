@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { 
   ArrowLeft, HelpCircle, Plus, Search, Building2, Truck, 
   X, Loader2, Phone, MapPin, FileText, Image as ImageIcon, Edit3,
-  Clock, ArrowRightLeft, PackagePlus, Wallet, Trash2, AlertTriangle, ExternalLink
+  Clock, ArrowRightLeft, PackagePlus, Wallet, Trash2, AlertTriangle, ExternalLink,
+  RotateCcw, Percent, Send
 } from 'lucide-react';
 import { toBangla } from '../../lib/utils';
 import { supabase } from '../../lib/supabase';
@@ -76,6 +77,21 @@ export default function DepotCompanyPage({ onBack, onNavigate }: Props) {
   const [isEditingCompany, setIsEditingCompany] = useState(false);
   const [isEditingSupplier, setIsEditingSupplier] = useState(false);
 
+  // ✅ কোম্পানি অ্যাকশন ও লেজার স্টেট
+  const [actionModal, setActionModal] = useState<'direct_delivery' | 'damage_return' | 'payment' | 'commission' | null>(null);
+  const [isSavingAction, setIsSavingAction] = useState(false);
+  const [companyLedger, setCompanyLedger] = useState<any[]>([]);
+  const [depotProducts, setDepotProducts] = useState<any[]>([]);
+  const [depotDealers, setDepotDealers] = useState<any[]>([]);
+  const [actionForm, setActionForm] = useState({
+    dealerId: '',
+    productId: '',
+    returnSource: 'depot' as 'depot' | 'dealer',
+    quantity: '',
+    amount: '',
+    notes: ''
+  });
+
   // টোস্ট স্টেট
   const [toast, setToast] = useState<{ show: boolean, message: string, type: 'success' | 'error' }>({ show: false, message: '', type: 'success' });
   const showToast = (message: string, type: 'success' | 'error' = 'success') => setToast({ show: true, message, type });
@@ -134,6 +150,161 @@ export default function DepotCompanyPage({ onBack, onNavigate }: Props) {
   useEffect(() => {
     fetchData();
   }, [isDemoMode, activeBusiness?.id]);
+
+  // ✅ নির্বাচিত কোম্পানির লেজার, পণ্য ও ডিলার লোড করা
+  const fetchCompanyDetailsData = async (companyId: string) => {
+    try {
+      if (isDemoMode) {
+        setDepotProducts([{ id: 'p1', name: 'ডেমো ফিড (৫০ কেজি)', stock_quantity: 100, purchase_price: 2000 }]);
+        setDepotDealers([{ id: 'd1', name: 'মেসার্স ভাই ভাই ট্রেডার্স', due_balance: 25000 }]);
+        return;
+      }
+      if (!activeBusiness?.id) return;
+
+      const [ledgerRes, prodRes, dealRes] = await Promise.all([
+        supabase.from('depot_company_ledger').select('*').eq('business_id', activeBusiness.id).eq('company_id', companyId).order('created_at', { ascending: false }),
+        supabase.from('products').select('*').eq('business_id', activeBusiness.id).order('name'),
+        supabase.from('dealers').select('id, name, due_balance').eq('business_id', activeBusiness.id).order('name')
+      ]);
+
+      if (!ledgerRes.error) setCompanyLedger(ledgerRes.data || []);
+      if (!prodRes.error) setDepotProducts(prodRes.data || []);
+      if (!dealRes.error) setDepotDealers(dealRes.data || []);
+    } catch (err) {
+      console.error('Company details fetch error:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedCompany) {
+      fetchCompanyDetailsData(selectedCompany.id);
+    } else {
+      setCompanyLedger([]);
+    }
+  }, [selectedCompany?.id, isDemoMode, activeBusiness?.id]);
+
+  const openActionModal = (type: 'direct_delivery' | 'damage_return' | 'payment' | 'commission') => {
+    setActionForm({ dealerId: '', productId: '', returnSource: 'depot', quantity: '', amount: '', notes: '' });
+    setActionModal(type);
+  };
+
+  const getEntryLabel = (type: string) => {
+    if (type === 'direct_delivery') return 'কোম্পানির অধীনে মাল পাঠানো';
+    if (type === 'damage_return') return 'ড্যামেজ মাল রিটার্ন';
+    if (type === 'payment') return 'কোম্পানিকে পেমেন্ট';
+    if (type === 'commission') return 'কোম্পানি কমিশন';
+    return type;
+  };
+
+  const handleSaveCompanyAction = async () => {
+    if (!selectedCompany || !actionModal) return;
+    const qty = Number(actionForm.quantity) || 0;
+    const amt = Number(actionForm.amount) || 0;
+
+    if (actionModal === 'direct_delivery') {
+      if (!actionForm.dealerId || !actionForm.productId || qty <= 0) {
+        return showToast('ডিলার, পণ্য এবং সঠিক পরিমাণ দিন', 'error');
+      }
+    } else if (actionModal === 'damage_return') {
+      if (amt <= 0) return showToast('রিটার্ন টাকার পরিমাণ দিন', 'error');
+      if (actionForm.returnSource === 'dealer' && !actionForm.dealerId) {
+        return showToast('কোন ডিলার থেকে রিটার্ন তা সিলেক্ট করুন', 'error');
+      }
+    } else {
+      if (amt <= 0) return showToast('সঠিক টাকার পরিমাণ দিন', 'error');
+    }
+
+    setIsSavingAction(true);
+    try {
+      const dealerName = depotDealers.find(d => d.id === actionForm.dealerId)?.name;
+      const prodName = depotProducts.find(p => p.id === actionForm.productId)?.name;
+      const autoDetail = [
+        dealerName ? `ডিলার: ${dealerName}` : '',
+        prodName ? `পণ্য: ${prodName}` : '',
+        qty > 0 ? `পরিমাণ: ${qty}` : '',
+        actionForm.notes
+      ].filter(Boolean).join(' | ');
+
+      if (!isDemoMode && activeBusiness?.id) {
+        const { error: ledgerErr } = await supabase.from('depot_company_ledger').insert([{
+          business_id: activeBusiness.id,
+          company_id: selectedCompany.id,
+          dealer_id: actionForm.dealerId || null,
+          product_id: actionForm.productId || null,
+          entry_type: actionModal,
+          return_source: actionModal === 'damage_return' ? actionForm.returnSource : null,
+          quantity: qty,
+          amount: amt,
+          notes: autoDetail,
+          entry_date: new Date().toISOString().split('T')[0],
+        }]);
+        if (ledgerErr) throw ledgerErr;
+
+        // স্টক কমানো: কোম্পানির অধীনে পাঠানো বা ডিপো থেকে ড্যামেজ রিটার্ন হলে
+        if ((actionModal === 'direct_delivery' || (actionModal === 'damage_return' && actionForm.returnSource === 'depot')) && actionForm.productId && qty > 0) {
+          const prod = depotProducts.find(p => p.id === actionForm.productId);
+          if (prod) {
+            const newQty = Math.max(0, Number(prod.stock_quantity || 0) - qty);
+            const { error: prodErr } = await supabase.from('products').update({ stock_quantity: newQty }).eq('id', prod.id);
+            if (prodErr) throw prodErr;
+          }
+        }
+
+        // ডিলার থেকে ড্যামেজ রিটার্ন হলে ডিলারের বাকি কমানো (Direct delivery-তে ডিলারের বাকি বাড়বে না)
+        if (actionModal === 'damage_return' && actionForm.returnSource === 'dealer' && actionForm.dealerId && amt > 0) {
+          const dealer = depotDealers.find(d => d.id === actionForm.dealerId);
+          if (dealer) {
+            const newDue = Math.max(0, Number(dealer.due_balance || 0) - amt);
+            const { error: dealErr } = await supabase.from('dealers').update({ due_balance: newDue }).eq('id', dealer.id);
+            if (dealErr) throw dealErr;
+          }
+        }
+
+        await fetchCompanyDetailsData(selectedCompany.id);
+      } else {
+        setCompanyLedger(prev => [{
+          id: Date.now().toString(),
+          entry_type: actionModal,
+          return_source: actionModal === 'damage_return' ? actionForm.returnSource : null,
+          quantity: qty,
+          amount: amt,
+          notes: autoDetail,
+          entry_date: new Date().toISOString().split('T')[0]
+        }, ...prev]);
+      }
+
+      showToast(`${getEntryLabel(actionModal)} সফলভাবে সেভ হয়েছে!`);
+      setActionModal(null);
+    } catch (error: any) {
+      showToast('সেভ করতে সমস্যা হয়েছে: ' + error.message, 'error');
+    } finally {
+      setIsSavingAction(false);
+    }
+  };
+
+  // ✅ কোম্পানির সংক্ষিপ্ত হিসাব
+  const companyStockValue = isDemoMode
+    ? demoCompanyStats.currentStockValue
+    : depotProducts
+        .filter(p => !p.company_id || p.company_id === selectedCompany?.id)
+        .reduce((sum, p) => sum + (Number(p.stock_quantity || 0) * Number(p.purchase_price || 0)), 0);
+
+  const totalDirectAndReturn = companyLedger
+    .filter(l => l.entry_type === 'direct_delivery' || l.entry_type === 'damage_return')
+    .reduce((sum, l) => sum + Number(l.amount || 0), 0);
+
+  const totalCommission = companyLedger
+    .filter(l => l.entry_type === 'commission')
+    .reduce((sum, l) => sum + Number(l.amount || 0), 0);
+
+  const totalPaidToCompany = companyLedger
+    .filter(l => l.entry_type === 'payment')
+    .reduce((sum, l) => sum + Number(l.amount || 0), 0);
+
+  const receivableFromCompany = totalDirectAndReturn + totalCommission;
+  const companyPayableValue = isDemoMode
+    ? demoCompanyStats.companyPayable
+    : Math.max(0, Number((selectedCompany as any)?.due_balance || 0) - totalPaidToCompany - totalDirectAndReturn);
 
   // ✅ ফাইল দেখার ফাংশন
   const handleViewDocument = async (fileKey: string) => {
@@ -519,24 +690,70 @@ export default function DepotCompanyPage({ onBack, onNavigate }: Props) {
               )}
             </div>
 
-            <div className="grid grid-cols-3 gap-2 shrink-0">
-              <button onClick={() => onNavigate('purchase')} className="bg-da-depotBlue text-white py-2.5 rounded-lg font-bold shadow-sm flex items-center justify-center gap-1.5 active:scale-95 transition"><PackagePlus size={16}/> <span className="text-[11px]">মাল গ্রহণ</span></button>
-              <button onClick={() => showToast('পেমেন্ট মডাল শীঘ্রই আসছে!', 'success')} className="bg-da-green text-white py-2.5 rounded-lg font-bold shadow-sm flex items-center justify-center gap-1.5 active:scale-95 transition"><Wallet size={16}/> <span className="text-[11px]">পেমেন্ট</span></button>
-              <button onClick={() => onNavigate('depot')} className="bg-da-depotAmber text-da-depotNavy py-2.5 rounded-lg font-bold shadow-sm flex items-center justify-center gap-1.5 active:scale-95 transition"><ArrowRightLeft size={16}/> <span className="text-[11px]">মাল ট্রান্সফার</span></button>
+            <div className="grid grid-cols-2 gap-2 shrink-0">
+              <button onClick={() => onNavigate('purchase')} className="bg-da-depotBlue text-white py-2.5 px-2 rounded-lg font-bold shadow-sm flex items-center justify-center gap-1.5 active:scale-95 transition"><PackagePlus size={16}/> <span className="text-[11px]">মাল গ্রহণ</span></button>
+              <button onClick={() => openActionModal('payment')} className="bg-da-green text-white py-2.5 px-2 rounded-lg font-bold shadow-sm flex items-center justify-center gap-1.5 active:scale-95 transition"><Wallet size={16}/> <span className="text-[11px]">পেমেন্ট</span></button>
+              <button onClick={() => openActionModal('direct_delivery')} className="bg-da-depotAmber text-da-depotNavy py-2.5 px-2 rounded-lg font-bold shadow-sm flex items-center justify-center gap-1.5 active:scale-95 transition"><Send size={15}/> <span className="text-[10.5px] leading-tight">কোম্পানির অধীনে পাঠানো</span></button>
+              <button onClick={() => openActionModal('damage_return')} className="bg-red-600 text-white py-2.5 px-2 rounded-lg font-bold shadow-sm flex items-center justify-center gap-1.5 active:scale-95 transition"><RotateCcw size={15}/> <span className="text-[11px]">ড্যামেজ মাল রিটার্ন</span></button>
             </div>
 
             <div className="bg-white rounded-xl border border-da-cardBorder shadow-sm p-2.5 shrink-0 mt-1">
               <h3 className="font-bold text-[11px] text-da-textDark mb-2 flex items-center gap-1.5 border-b border-da-cardBorder pb-1.5"><Clock size={14} className="text-da-depotBlue"/> লেনদেনের সংক্ষিপ্ত তথ্য</h3>
               <div className="grid grid-cols-2 gap-2">
-                <div className="bg-da-depotBg p-2 rounded-lg border border-da-cardBorder flex flex-col items-center text-center"><span className="text-[9px] font-bold text-da-textMuted mb-0.5">বর্তমান স্টক</span><span className="font-black text-sm text-da-depotBlue">৳ {toBangla(isDemoMode ? demoCompanyStats.currentStockValue : 0)}</span></div>
-                <div className="bg-red-50 p-2 rounded-lg border border-red-200 flex flex-col items-center text-center"><span className="text-[9px] font-bold text-red-600 mb-0.5">কোম্পানির পাওনা</span><span className="font-black text-sm text-red-600">৳ {toBangla(isDemoMode ? demoCompanyStats.companyPayable : 0)}</span></div>
+                <div className="bg-da-depotBg p-2 rounded-lg border border-da-cardBorder flex flex-col items-center text-center">
+                  <span className="text-[9px] font-bold text-da-textMuted mb-0.5">বর্তমান স্টক</span>
+                  <span className="font-black text-sm text-da-depotBlue">৳ {toBangla(companyStockValue)}</span>
+                </div>
+                <div className="bg-red-50 p-2 rounded-lg border border-red-200 flex flex-col items-center text-center">
+                  <span className="text-[9px] font-bold text-red-600 mb-0.5">কোম্পানির পাওনা</span>
+                  <span className="font-black text-sm text-red-600">৳ {toBangla(companyPayableValue)}</span>
+                </div>
+                <div className="bg-emerald-50 p-2 rounded-lg border border-emerald-200 flex flex-col items-center text-center">
+                  <span className="text-[9px] font-bold text-emerald-700 mb-0.5">আমি কোম্পানির কাছে পাব</span>
+                  <span className="font-black text-sm text-emerald-700">৳ {toBangla(receivableFromCompany)}</span>
+                </div>
+                <div className="bg-blue-50 p-2 rounded-lg border border-blue-200 flex flex-col items-center text-center">
+                  <span className="text-[9px] font-bold text-blue-700 mb-0.5">মোট পেমেন্ট করেছি</span>
+                  <span className="font-black text-sm text-blue-700">৳ {toBangla(totalPaidToCompany)}</span>
+                </div>
+                <div className="col-span-2 bg-amber-50 p-2 rounded-lg border border-amber-200 flex items-center justify-between px-3">
+                  <div className="flex flex-col text-left">
+                    <span className="text-[9px] font-bold text-amber-800">মোট কমিশন (কোম্পানি থেকে)</span>
+                    <span className="font-black text-sm text-amber-700">৳ {toBangla(totalCommission)}</span>
+                  </div>
+                  <button onClick={() => openActionModal('commission')} className="bg-amber-600 text-white text-[10px] font-bold px-2.5 py-1.5 rounded-lg flex items-center gap-1 active:scale-95 transition">
+                    <Percent size={12}/> + কমিশন যোগ
+                  </button>
+                </div>
               </div>
             </div>
 
             <div className="bg-white rounded-xl border border-da-cardBorder shadow-sm p-2.5 shrink-0 mt-1">
               <h3 className="font-bold text-[11px] text-da-textDark mb-2 flex items-center gap-1.5 border-b border-da-cardBorder pb-1.5"><Clock size={14} className="text-da-depotBlue"/> সাম্প্রতিক কাজ</h3>
               <div className="flex flex-col gap-1.5">
-                {isDemoMode ? demoCompanyActivities.map(activity => (
+                {companyLedger.length > 0 ? companyLedger.map(item => (
+                  <div
+                    key={item.id}
+                    onClick={() => setSelectedActivity({
+                      type: getEntryLabel(item.entry_type),
+                      date: item.entry_date || item.created_at?.split('T')[0] || '',
+                      amount: item.amount || 0,
+                      details: item.notes || 'বিস্তারিত তথ্য নেই'
+                    })}
+                    className="bg-da-depotBg border border-da-cardBorder rounded-lg p-2 flex justify-between items-center cursor-pointer active:scale-[0.98] transition-transform"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-7 h-7 rounded-full bg-white border border-da-cardBorder flex items-center justify-center shrink-0">
+                        {item.entry_type === 'direct_delivery' ? <Send size={13} className="text-da-depotAmber"/> : item.entry_type === 'damage_return' ? <RotateCcw size={13} className="text-red-600"/> : item.entry_type === 'commission' ? <Percent size={13} className="text-amber-600"/> : <Wallet size={13} className="text-da-green"/>}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-bold text-[11px] text-da-textDark truncate">{getEntryLabel(item.entry_type)}</p>
+                        <p className="text-[9px] text-da-textMuted truncate mt-0.5">{item.entry_date || ''} {item.notes ? `• ${item.notes}` : ''}</p>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0 pl-2"><p className="font-black text-[11px] text-da-depotNavy">৳{toBangla(item.amount || 0)}</p></div>
+                  </div>
+                )) : isDemoMode ? demoCompanyActivities.map(activity => (
                   <div key={activity.id} onClick={() => setSelectedActivity(activity)} className="bg-da-depotBg border border-da-cardBorder rounded-lg p-2 flex justify-between items-center cursor-pointer active:scale-[0.98] transition-transform">
                     <div className="flex items-center gap-2 min-w-0">
                       <div className="w-7 h-7 rounded-full bg-white border border-da-cardBorder flex items-center justify-center shrink-0">{activity.type === 'মাল গ্রহণ' ? <PackagePlus size={14} className="text-da-depotBlue"/> : activity.type === 'মাল ট্রান্সফার' ? <ArrowRightLeft size={14} className="text-da-depotAmber"/> : <Wallet size={14} className="text-da-green"/>}</div>
@@ -763,6 +980,83 @@ export default function DepotCompanyPage({ onBack, onNavigate }: Props) {
             </div>
             <div className="p-3 border-t border-da-cardBorder bg-da-depotBg">
               <button onClick={() => setSelectedActivity(null)} className="w-full bg-da-depotNavy text-white py-2 rounded-xl font-bold">বন্ধ করুন</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= মডাল: কোম্পানি অ্যাকশন (পাঠানো / রিটার্ন / পেমেন্ট / কমিশন) ================= */}
+      {actionModal && selectedCompany && (
+        <div className="fixed inset-0 bg-black/60 z-[105] flex justify-center items-end sm:items-center backdrop-blur-sm">
+          <div className="bg-white w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl overflow-hidden flex flex-col shadow-2xl animate-in slide-in-from-bottom duration-300 max-h-[90dvh]">
+            <div className="bg-da-depotNavy p-3 flex justify-between items-center text-white shrink-0">
+              <h2 className="font-bold text-sm">{getEntryLabel(actionModal)}</h2>
+              <button onClick={() => setActionModal(null)} className="p-1 bg-white/20 rounded-full"><X size={16}/></button>
+            </div>
+
+            <div className="p-4 flex flex-col gap-3 overflow-y-auto">
+              <div className="bg-da-depotBg p-2 rounded-lg border border-da-cardBorder text-xs font-bold text-da-depotNavy">
+                কোম্পানি: {selectedCompany.name}
+              </div>
+
+              {actionModal === 'damage_return' && (
+                <div>
+                  <label className="text-[11px] font-bold text-da-textMuted mb-1 block">রিটার্ন কোথা থেকে?</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button type="button" onClick={() => setActionForm({...actionForm, returnSource: 'depot', dealerId: ''})} className={`py-2 rounded-lg text-xs font-bold border ${actionForm.returnSource === 'depot' ? 'bg-da-depotNavy text-white border-da-depotNavy' : 'bg-white text-da-textDark border-da-cardBorder'}`}>ডিপো স্টক থেকে</button>
+                    <button type="button" onClick={() => setActionForm({...actionForm, returnSource: 'dealer'})} className={`py-2 rounded-lg text-xs font-bold border ${actionForm.returnSource === 'dealer' ? 'bg-da-depotNavy text-white border-da-depotNavy' : 'bg-white text-da-textDark border-da-cardBorder'}`}>ডিলারের কাছ থেকে</button>
+                  </div>
+                </div>
+              )}
+
+              {(actionModal === 'direct_delivery' || (actionModal === 'damage_return' && actionForm.returnSource === 'dealer')) && (
+                <div>
+                  <label className="text-[11px] font-bold text-da-textMuted mb-1 block">ডিলার নির্বাচন করুন *</label>
+                  <select value={actionForm.dealerId} onChange={e => setActionForm({...actionForm, dealerId: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue bg-white">
+                    <option value="">-- ডিলার সিলেক্ট করুন --</option>
+                    {depotDealers.map(d => (
+                      <option key={d.id} value={d.id}>{d.name} (বাকি: ৳{toBangla(d.due_balance || 0)})</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {(actionModal === 'direct_delivery' || actionModal === 'damage_return') && (
+                <>
+                  <div>
+                    <label className="text-[11px] font-bold text-da-textMuted mb-1 block">পণ্য {actionModal === 'direct_delivery' ? '*' : '(ঐচ্ছিক)'}</label>
+                    <select value={actionForm.productId} onChange={e => setActionForm({...actionForm, productId: e.target.value})} className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue bg-white">
+                      <option value="">-- পণ্য সিলেক্ট করুন --</option>
+                      {depotProducts.map(p => (
+                        <option key={p.id} value={p.id}>{p.name} (স্টক: {toBangla(p.stock_quantity || 0)})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-bold text-da-textMuted mb-1 block">মালের পরিমাণ {actionModal === 'direct_delivery' ? '*' : ''}</label>
+                    <input type="number" inputMode="decimal" value={actionForm.quantity} onChange={e => setActionForm({...actionForm, quantity: e.target.value})} placeholder="যেমন: 10" className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" />
+                  </div>
+                </>
+              )}
+
+              <div>
+                <label className="text-[11px] font-bold text-da-textMuted mb-1 block">
+                  {actionModal === 'direct_delivery' ? 'কোম্পানির কাছে প্রাপ্য টাকা / চার্জ (৳)' : actionModal === 'damage_return' ? 'রিটার্ন মূল্য / কোম্পানির কাছে পাব (৳) *' : actionModal === 'commission' ? 'কমিশনের পরিমাণ (৳) *' : 'পেমেন্টের পরিমাণ (৳) *'}
+                </label>
+                <input type="number" inputMode="decimal" value={actionForm.amount} onChange={e => setActionForm({...actionForm, amount: e.target.value})} placeholder="0" className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-da-textMuted mb-1 block">নোট / বিবরণ</label>
+                <input type="text" value={actionForm.notes} onChange={e => setActionForm({...actionForm, notes: e.target.value})} placeholder="প্রয়োজনীয় নোট লিখুন..." className="w-full border border-da-cardBorder rounded-lg p-2 text-sm outline-none focus:border-da-depotBlue" />
+              </div>
+            </div>
+
+            <div className="p-3 border-t border-da-cardBorder bg-da-depotBg flex gap-2 shrink-0">
+              <button onClick={() => setActionModal(null)} disabled={isSavingAction} className="flex-1 bg-white border border-da-cardBorder text-da-textMuted py-2 rounded-xl font-bold">বাতিল</button>
+              <button onClick={handleSaveCompanyAction} disabled={isSavingAction} className="flex-1 bg-da-depotBlue text-white py-2 rounded-xl font-bold shadow-md flex justify-center items-center">
+                {isSavingAction ? <Loader2 size={16} className="animate-spin"/> : 'সেভ করুন'}
+              </button>
             </div>
           </div>
         </div>

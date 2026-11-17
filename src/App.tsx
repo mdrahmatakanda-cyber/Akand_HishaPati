@@ -10,7 +10,9 @@ import DepotCompanyPage from './pages/depot/DepotCompanyPage';
 import DepotStockInPage from './pages/depot/DepotStockInPage';
 import DepotExpensePage from './pages/depot/DepotExpensePage';
 import DepotReportsPage from './pages/depot/DepotReportsPage';
-import DepotTransferPage from './pages/depot/DepotTransferPage'; 
+import DepotTransferPage from './pages/depot/DepotTransferPage';
+import DepotSalesKhataPage from './pages/depot/DepotSalesKhataPage';
+import DepotPurchaseKhataPage from './pages/depot/DepotPurchaseKhataPage';
 
 import {
   PurchasePage, SalePage,
@@ -35,16 +37,16 @@ import { AppProvider } from './context/AppContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import InstallPWA from './components/InstallPWA';
 
-export type ScreenKey = 
+export type ScreenKey =
   | 'dashboard' | 'purchase' | 'sale'
   | 'purchase_khata' | 'sale_khata' | 'due_khata' | 'expense_khata'
-  | 'purchase_details' | 'sale_details' 
+  | 'purchase_details' | 'sale_details'
   | 'new_expense' | 'expense_history'
   | 'contacts' | 'product_list' | 'stock' | 'reports'
   | 'depot' | 'sr' | 'market' | 'company'
   | 'cashbox' | 'partners' | 'marketing' | 'app_access'
   | 'expired' | 'warranty' | 'printer' | 'recycle_bin'
-  | 'inbox' | 'help' | 'menu' | 'calculator' | 'bonus';
+  | 'inbox' | 'help' | 'menu' | 'calculator' | 'bonus' | 'depot_sales_khata' | 'depot_purchase_khata';
 
 export type BusinessMode = 'shop' | 'depot' | 'general';
 
@@ -55,7 +57,7 @@ export interface ModeConfig {
 const defaultModeConfig: ModeConfig = {
   khata: { shop: true, depot: true, general: true },
   business: { shop: true, depot: true, general: true },
-  depot: { shop: false, depot: true, general: true }, 
+  depot: { shop: false, depot: true, general: true },
   others: { shop: true, depot: true, general: true },
 };
 
@@ -73,7 +75,7 @@ function AppContent() {
 
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
   const [showExitModal, setShowExitModal] = useState<boolean>(false);
-  
+
   const [currentMode, setCurrentMode] = useState<BusinessMode>(() => {
     const savedMode = localStorage.getItem('appMode');
     return (savedMode as BusinessMode) || 'general';
@@ -84,7 +86,7 @@ function AppContent() {
   }, [currentMode]);
 
   const [modeConfig, setModeConfig] = useState<ModeConfig>(defaultModeConfig);
-  
+
   const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(() => {
     return localStorage.getItem('selectedTransactionId') || null;
   });
@@ -205,12 +207,12 @@ function AppContent() {
         </div>
         <h1 className="text-xl font-bold text-[#0B5C47] mb-2">অনুমোদনের অপেক্ষায়!</h1>
         <p className="text-gray-600 mb-6 text-sm px-4">আপনার অ্যাকাউন্টটি বর্তমানে অ্যাডমিনের অনুমোদনের জন্য অপেক্ষা করছে। দ্রুত অনুমোদন পেতে নিচের বাটনগুলো ব্যবহার করে যোগাযোগ করুন।</p>
-        
+
         <div className="flex flex-col gap-3 w-full max-w-xs mb-6">
           {/* হোয়াটসঅ্যাপ বাটন */}
-          <a 
-            href={`https://wa.me/8801752005057?text=${whatsappMessage}`} 
-            target="_blank" 
+          <a
+            href={`https://wa.me/8801752005057?text=${whatsappMessage}`}
+            target="_blank"
             rel="noopener noreferrer"
             className="w-full bg-[#25D366] text-white py-3 rounded-xl font-bold shadow-md flex justify-center items-center gap-2 active:scale-95 transition"
           >
@@ -218,7 +220,7 @@ function AppContent() {
           </a>
 
           {/* ইমেইল বাটন */}
-          <a 
+          <a
             href={`mailto:mdrahmatakanda@gmail.com?subject=${emailSubject}&body=${emailBody}`}
             className="w-full bg-white border-2 border-[#1E88E5] text-[#1E88E5] py-3 rounded-xl font-bold shadow-sm flex justify-center items-center gap-2 active:scale-95 transition"
           >
@@ -232,7 +234,7 @@ function AppContent() {
       </div>
     );
   }
-  
+
   if (user && !activeBusiness) return <SetupBusinessPage />;
 
   const renderScreen = () => {
@@ -258,9 +260,9 @@ function AppContent() {
     if (currentScreen === 'help') return <HelpPage onBack={goBack} />;
     if (currentScreen === 'menu') {
       return (
-        <MenuPage 
-          onBack={goBack} 
-          onNavigate={navigateTo} 
+        <MenuPage
+          onBack={goBack}
+          onNavigate={navigateTo}
           currentMode={currentMode}
           setCurrentMode={setCurrentMode}
           modeConfig={modeConfig}
@@ -273,7 +275,7 @@ function AppContent() {
     if (currentScreen === 'purchase') {
       return currentMode === 'depot'
         ? <DepotStockInPage onBack={goBack} />
-        : <PurchasePage onBack={goBack} />; 
+        : <PurchasePage onBack={goBack} />;
     }
     if (currentScreen === 'sale') return <SalePage onBack={goBack} onNavigate={navigateTo} />;
 
@@ -286,6 +288,10 @@ function AppContent() {
         : <ExpenseKhataPage onBack={goBack} onNavigate={navigateTo} />;
     }
 
+    // ✅ ডিপো ক্রয় ও বিক্রয় খাতা রাউটিং
+    if (currentScreen === 'depot_sales_khata') return <DepotSalesKhataPage onBack={goBack} onNavigate={navigateTo} />;
+    if (currentScreen === 'depot_purchase_khata') return <DepotPurchaseKhataPage onBack={goBack} />;
+
     if (currentScreen === 'new_expense') return <NewExpensePage onBack={goBack} />;
     if (currentScreen === 'expense_history') return <ExpenseHistoryPage onBack={goBack} />;
 
@@ -295,7 +301,7 @@ function AppContent() {
     if (currentScreen === 'contacts') return <ContactsPage onBack={goBack} />;
     if (currentScreen === 'product_list') return <ProductListPage onBack={goBack} />;
     if (currentScreen === 'stock') {
-      return currentMode === 'depot' 
+      return currentMode === 'depot'
         ? <DepotStockPage onBack={goBack} onNavigate={navigateTo} />
         : <StockPage onBack={goBack} onNavigate={navigateTo} />;
     }
@@ -317,7 +323,7 @@ function AppContent() {
 
     if (currentScreen === 'bonus') return <DepotBonusPage onBack={goBack} />;
     if (currentScreen === 'sr') {
-      return currentMode === 'depot' 
+      return currentMode === 'depot'
         ? <DepotOfficerPage onBack={goBack} onNavigate={navigateTo} />
         : <SrPage onBack={goBack} />;
     }
@@ -342,7 +348,7 @@ function AppContent() {
   return (
     <>
       {renderScreen()}
-      
+
       <InstallPWA />
 
       {showExitModal && (

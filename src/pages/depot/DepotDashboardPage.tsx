@@ -27,7 +27,7 @@ function shade(hex: string, amount: number): string {
 
 export default function DepotDashboardPage({ onNavigate, onToggleMode }: Props) {
   const { isDemoMode } = useAppContext();
-  const { activeBusiness } = useAuth();
+  const { activeBusiness, businesses } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [selectedPeriod, setSelectedPeriod] = useState<'TODAY' | 'WEEK' | 'MONTH'>('TODAY');
   
@@ -59,27 +59,24 @@ export default function DepotDashboardPage({ onNavigate, onToggleMode }: Props) 
             startDate = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
           }
 
-          const [prodRes, custRes, dealRes, supRes, saleRes, expRes] = await Promise.all([
-            supabase.from('products').select('stock_quantity, purchase_price').eq('business_id', bizId),
-            supabase.from('customers').select('due_balance').eq('business_id', bizId),
+          const allBizIds = businesses.length > 0 ? businesses.map(b => b.id) : [bizId];
+          const [prodRes, dealRes, supRes, saleRes, expRes] = await Promise.all([
+            supabase.from('products').select('depot_stock_quantity, purchase_price').in('business_id', allBizIds),
             supabase.from('dealers').select('due_balance').eq('business_id', bizId),
             supabase.from('suppliers').select('due_balance').eq('business_id', bizId),
-            supabase.from('sales').select('total_amount').eq('business_id', bizId).gte('sale_date', startDate),
-            supabase.from('expenses').select('amount').eq('business_id', bizId).gte('date', startDate)
+            supabase.from('sales').select('total_amount').eq('business_id', bizId).eq('is_depot', true).is('deleted_at', null).gte('sale_date', startDate),
+            supabase.from('expenses').select('amount').eq('business_id', bizId).eq('is_depot', true).is('deleted_at', null).gte('date', startDate)
           ]);
 
-          const stockVal = prodRes.data?.reduce((acc, curr) => acc + (Number(curr.stock_quantity) * Number(curr.purchase_price)), 0) || 0;
-          
-          const custDue = custRes.data?.reduce((acc, curr) => acc + Number(curr.due_balance), 0) || 0;
-          const dealDue = dealRes.data?.reduce((acc, curr) => acc + Number(curr.due_balance), 0) || 0;
-          const supDue = supRes.data?.reduce((acc, curr) => acc + Number(curr.due_balance), 0) || 0;
-
-          const periodSale = saleRes.data?.reduce((acc, curr) => acc + Number(curr.total_amount), 0) || 0;
-          const periodExpense = expRes.data?.reduce((acc, curr) => acc + Number(curr.amount), 0) || 0;
+          const stockVal = prodRes.data?.reduce((acc, curr) => acc + (Number(curr.depot_stock_quantity || 0) * Number(curr.purchase_price || 0)), 0) || 0;
+          const dealDue = dealRes.data?.reduce((acc, curr) => acc + Number(curr.due_balance || 0), 0) || 0;
+          const supDue = supRes.data?.reduce((acc, curr) => acc + Number(curr.due_balance || 0), 0) || 0;
+          const periodSale = saleRes.data?.reduce((acc, curr) => acc + Number(curr.total_amount || 0), 0) || 0;
+          const periodExpense = expRes.data?.reduce((acc, curr) => acc + Number(curr.amount || 0), 0) || 0;
 
           setStats({
             stockValue: stockVal,
-            marketDue: custDue + dealDue,
+            marketDue: dealDue,
             companyPayable: supDue,
             periodSale,
             periodExpense

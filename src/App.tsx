@@ -119,14 +119,25 @@ function AppContent() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!businesses.length) return;
+    if (currentMode === 'depot' && activeBusiness?.type !== 'depot') {
+      const depotBiz = businesses.find(b => b.type === 'depot' && b.name.includes('Dream')) || businesses.find(b => b.type === 'depot');
+      if (depotBiz) switchBusiness(depotBiz.id);
+    } else if (currentMode === 'shop' && activeBusiness?.type !== 'shop') {
+      const shopBiz = businesses.find(b => b.type === 'shop');
+      if (shopBiz) switchBusiness(shopBiz.id);
+    }
+  }, [currentMode, businesses, activeBusiness?.id, activeBusiness?.type]);
+
   const handleToggleMode = async () => {
     if (currentMode === 'depot') {
       const shopBiz = businesses.find(b => b.type === 'shop');
-      if (shopBiz) await switchBusiness(shopBiz.id);
+      if (shopBiz && activeBusiness?.id !== shopBiz.id) await switchBusiness(shopBiz.id);
       setCurrentMode('shop');
     } else {
-      const depotBiz = businesses.find(b => b.type === 'depot');
-      if (depotBiz) await switchBusiness(depotBiz.id);
+      const depotBiz = businesses.find(b => b.type === 'depot' && b.name.includes('Dream')) || businesses.find(b => b.type === 'depot');
+      if (depotBiz && activeBusiness?.type !== 'depot') await switchBusiness(depotBiz.id);
       setCurrentMode('depot');
     }
   };
@@ -277,7 +288,7 @@ function AppContent() {
         ? <DepotStockInPage onBack={goBack} />
         : <PurchasePage onBack={goBack} />;
     }
-    if (currentScreen === 'sale') return <SalePage onBack={goBack} onNavigate={navigateTo} />;
+    if (currentScreen === 'sale') return <SalePage isDepot={currentMode === 'depot'} onBack={goBack} onNavigate={navigateTo} />;
 
     if (currentScreen === 'purchase_khata') return <PurchaseKhataPage onBack={goBack} onNavigate={navigateTo} />;
     if (currentScreen === 'sale_khata') return <SaleKhataPage onBack={goBack} onNavigate={navigateTo} />;

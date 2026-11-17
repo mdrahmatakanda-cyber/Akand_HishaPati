@@ -109,6 +109,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
+    localStorage.removeItem('currentScreen');
+    localStorage.removeItem('appMode');
+    localStorage.removeItem('selectedTransactionId');
     await supabase.auth.signOut();
   };
 

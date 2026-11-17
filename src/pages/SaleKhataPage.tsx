@@ -48,6 +48,8 @@ export default function SaleKhataPage({ onBack, onNavigate }: SaleKhataProps) {
             .from('sales')
             .select('id, receipt_no, total_amount, payment_method, sale_date, customers(name), sale_items(products(name, categories(name), companies(name)))')
             .eq('business_id', activeBusiness.id)
+            .or('is_depot.is.null,is_depot.eq.false')
+            .is('deleted_at', null)
             .order('sale_date', { ascending: false });
 
           if (error) throw error;

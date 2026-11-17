@@ -6,11 +6,51 @@ import {
 } from 'lucide-react';
 import { toBangla, numberToWordsBn } from '../lib/utils';
 import { useAuth } from '../context/AuthContext';
+import { supabase } from '../lib/supabase';
 import { ReceiptModal, getMergedReceiptSettings, formatReceiptNumber, type ReceiptData, type ReceiptTypeKey } from '../pages/ReceiptModal';
 
 export interface EngineProduct { id: string | number; name: string; category: string; company: string; stockQty: number; rate: number; unit: string; image_url?: string; }
 export interface EngineParty { id: string; name: string; phone: string; address: string; }
 export interface TransferItem { id: string | number; name: string; quantity: number; rate: number; unit: string; }
+
+export async function fetchEngineData(
+  businessId: string,
+  partyTable: 'customers' | 'companies' | 'suppliers' | 'dealers',
+  priceField: 'sale_price' | 'purchase_price' = 'sale_price',
+  allBusinessIds?: string[],
+  isDepot: boolean = false
+): Promise<{ products: EngineProduct[]; parties: EngineParty[] }> {
+  const prodBizIds = allBusinessIds && allBusinessIds.length > 0 ? allBusinessIds : [businessId];
+  const [prodRes, catRes, compRes, partyRes] = await Promise.all([
+    supabase.from('products').select('*').in('business_id', prodBizIds),
+    supabase.from('categories').select('*'),
+    supabase.from('companies').select('*').eq('business_id', businessId),
+    partyTable === 'companies' ? Promise.resolve({ data: null }) : supabase.from(partyTable).select('*').eq('business_id', businessId),
+  ]);
+
+  const cats = catRes.data || [];
+  const comps = compRes.data || [];
+  const rawParties = partyTable === 'companies' ? comps : (partyRes.data || []);
+
+  return {
+    products: (prodRes.data || []).map((p: any) => ({
+      id: p.id,
+      name: p.name,
+      category: cats.find((c: any) => c.id === p.category_id)?.name || 'সাধারণ',
+      company: comps.find((c: any) => c.id === p.company_id)?.name || 'সাধারণ',
+      stockQty: isDepot ? (p.depot_stock_quantity || 0) : (p.stock_quantity || 0),
+      rate: p[priceField] || 0,
+      unit: p.unit || 'পিস',
+      image_url: p.image_url,
+    })),
+    parties: rawParties.map((c: any) => ({
+      id: c.id,
+      name: c.name,
+      phone: c.phone || 'N/A',
+      address: c.address || c.area || 'N/A',
+    })),
+  };
+}
 
 // Transaction Engine
 interface TransactionEngineProps {

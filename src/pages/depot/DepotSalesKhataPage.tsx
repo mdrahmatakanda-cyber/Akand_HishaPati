@@ -35,12 +35,14 @@ export default function DepotSalesKhataPage({ onBack, onNavigate }: Props) {
       }
       if (!activeBusiness?.id) return;
 
-      const { data } = await supabase.from('sales')
+      const { data, error } = await supabase.from('sales')
         .select('*, customers(name)')
         .eq('business_id', activeBusiness.id)
+        .eq('is_depot', true)
         .is('deleted_at', null)
-        .order('created_at', { ascending: false });
-        
+        .order('sale_date', { ascending: false });
+
+      if (error) console.error('Depot sales fetch error:', error.message);
       setSales(data || []);
       setIsLoading(false);
     };
@@ -85,7 +87,16 @@ export default function DepotSalesKhataPage({ onBack, onNavigate }: Props) {
 
       <div className="flex-1 overflow-hidden relative">
         {activeTab === 'new' ? (
-          <div className="h-full"><SalePage onBack={() => setActiveTab('history')} onNavigate={onNavigate} /></div>
+          <div className="h-full">
+            <SalePage
+              isDepot={true}
+              onBack={() => {
+                setRefreshKey(k => k + 1);
+                setActiveTab('history');
+              }}
+              onNavigate={onNavigate}
+            />
+          </div>
         ) : (
           <div className="h-full overflow-y-auto p-3 flex flex-col gap-3">
             <div className="bg-white border border-da-cardBorder rounded-xl px-3 py-2 flex items-center gap-2 shadow-sm shrink-0">

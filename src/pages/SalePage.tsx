@@ -1,17 +1,16 @@
 import { useState, useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
-import TransactionEngine from '../components/TransactionEngine';
-import type { EngineProduct, EngineParty } from '../components/TransactionEngine';
+import TransactionEngine, { fetchEngineData, type EngineProduct, type EngineParty } from '../components/TransactionEngine';
 import { useAppContext } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { demoProducts, demoCustomersDetailed } from '../lib/demoData';
 
-interface SaleProps { onBack: () => void; onNavigate: (screen: string) => void; }
+interface SaleProps { onBack: () => void; onNavigate: (screen: string) => void; isDepot?: boolean; }
 
-export default function SalePage({ onBack, onNavigate }: SaleProps) {
+export default function SalePage({ onBack, onNavigate, isDepot = false }: SaleProps) {
   const { isDemoMode } = useAppContext();
-  const { activeBusiness } = useAuth();
+  const { activeBusiness, businesses } = useAuth();
 
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [products, setProducts] = useState<EngineProduct[]>([]);
@@ -32,25 +31,10 @@ export default function SalePage({ onBack, onNavigate }: SaleProps) {
           setCustomers(demoCustomersDetailed.map((c: any) => ({
             id: c.id, name: c.name, phone: c.phone || '', address: c.address || c.market_name || ''
           })));
-        } else {
-          const [prodRes, catRes, compRes, custRes] = await Promise.all([
-            supabase.from('products').select('*').eq('business_id', bizId),
-            supabase.from('categories').select('*'),
-            supabase.from('companies').select('*'),
-            supabase.from('customers').select('*')
-          ]);
-
-          if (prodRes.data) {
-            const cats = catRes.data || [];
-            const comps = compRes.data || [];
-            setProducts(prodRes.data.map((p: any) => ({
-              id: p.id, name: p.name, 
-              category: cats.find((c: any) => c.id === p.category_id)?.name || 'সাধারণ', 
-              company: comps.find((c: any) => c.id === p.company_id)?.name || 'সাধারণ',
-              stockQty: p.stock_quantity || 0, rate: p.sale_price || 0, unit: p.unit || 'পিস', image_url: p.image_url
-            })));
-          }
-          if (custRes.data) setCustomers(custRes.data.map((c: any) => ({ id: c.id, name: c.name, phone: c.phone || 'N/A', address: c.address || 'N/A' })));
+        } else if (bizId) {
+          const res = await fetchEngineData(bizId, 'customers', 'sale_price', businesses.map(b => b.id), isDepot);
+          setProducts(res.products);
+          setCustomers(res.parties);
         }
       } catch (error) {
         console.error("Data fetch error:", error);
@@ -77,10 +61,25 @@ export default function SalePage({ onBack, onNavigate }: SaleProps) {
         p_due_amount: data.dueAmount > 0 ? data.dueAmount : 0,
         p_payment_method: 'cash', 
         p_note: data.remarks,
-        p_items: itemsJson
+        p_items: itemsJson,
+        p_is_depot: isDepot
       });
       
       if (error) { alert("সেভ করতে সমস্যা: " + error.message); throw error; }
+
+      if (isDepot && activeBusiness?.id) {
+        const { data: latestSale } = await supabase
+          .from('sales')
+          .select('id')
+          .eq('business_id', activeBusiness.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (latestSale?.id) {
+          await supabase.from('sales').update({ is_depot: true }).eq('id', latestSale.id);
+        }
+      }
     }
     alert('বিক্রি সফলভাবে সম্পন্ন হয়েছে!');
     onBack(); 

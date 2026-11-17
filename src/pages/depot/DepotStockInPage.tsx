@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Loader2 } from 'lucide-react';
-import TransactionEngine from '../../components/TransactionEngine';
-import type { EngineProduct, EngineParty } from '../../components/TransactionEngine';
+import TransactionEngine, { fetchEngineData, type EngineProduct, type EngineParty } from '../../components/TransactionEngine';
 import { useAppContext } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -11,52 +10,28 @@ interface Props { onBack: () => void; }
 
 export default function DepotStockInPage({ onBack }: Props) {
   const { isDemoMode } = useAppContext();
-  const { activeBusiness } = useAuth();
+  const { activeBusiness, businesses } = useAuth();
 
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [products, setProducts] = useState<EngineProduct[]>([]);
   const [companies, setCompanies] = useState<EngineParty[]>([]);
 
   useEffect(() => {
-    const fetchData = async () => {
+    const load = async () => {
       if (!isDemoMode && !activeBusiness?.id) return;
       setIsDataLoading(true);
-
       try {
         if (isDemoMode) {
-          setProducts(demoProducts.map(p => ({ 
-            id: p.id.toString(), name: p.name, category: p.category, company: p.company, 
-            stockQty: p.stock, rate: p.purchasePrice, unit: 'পিস', image_url: p.image_url
-          })));
+          setProducts(demoProducts.map(p => ({ id: p.id.toString(), name: p.name, category: p.category, company: p.company, stockQty: p.stock, rate: p.purchasePrice, unit: 'পিস', image_url: p.image_url })));
           setCompanies(demoCompaniesList.map(c => ({ id: c.id, name: c.name, phone: c.phone || '', address: c.address || '' })));
-        } else {
-          if (!activeBusiness) return;
-          const bizId = activeBusiness.id;
-          const [prodRes, catRes, compRes] = await Promise.all([
-            supabase.from('products').select('*').eq('business_id', bizId),
-            supabase.from('categories').select('*'),
-            supabase.from('companies').select('*')
-          ]);
-
-          if (prodRes.data) {
-            const cats = catRes.data || [];
-            const comps = compRes.data || [];
-            setProducts(prodRes.data.map((p: any) => ({
-              id: p.id, name: p.name, 
-              category: cats.find((c: any) => c.id === p.category_id)?.name || 'সাধারণ', 
-              company: comps.find((c: any) => c.id === p.company_id)?.name || 'সাধারণ',
-              stockQty: p.stock_quantity || 0, rate: p.purchase_price || 0, unit: p.unit || 'পিস', image_url: p.image_url
-            })));
-          }
-          if (compRes.data) setCompanies(compRes.data.map((c: any) => ({ id: c.id, name: c.name, phone: c.phone || 'N/A', address: c.address || 'N/A' })));
+        } else if (activeBusiness?.id) {
+          const res = await fetchEngineData(activeBusiness.id, 'companies', 'purchase_price', businesses.map(b => b.id), true);
+          setProducts(res.products);
+          setCompanies(res.parties);
         }
-      } catch (error) {
-        console.error(error);
-      } finally {
-        setIsDataLoading(false);
-      }
+      } catch (error) { console.error(error); } finally { setIsDataLoading(false); }
     };
-    fetchData();
+    load();
   }, [isDemoMode, activeBusiness?.id]);
 
   const handleFinalizeStockIn = async (data: any) => {
@@ -75,7 +50,11 @@ export default function DepotStockInPage({ onBack }: Props) {
         p_due_amount: data.dueAmount > 0 ? data.dueAmount : 0,
         p_payment_method: 'cash',
         p_note: data.remarks,
-        p_items: itemsJson
+        p_items: itemsJson,
+        p_challan_no: data.challan || null,
+        p_batch_no: data.batch || null,
+        p_receipt_image_url: null,
+        p_is_depot: true
       });
 
       if (error) {

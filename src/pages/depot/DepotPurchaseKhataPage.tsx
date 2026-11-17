@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, PlusCircle, Clock, Search, Loader2, ShoppingBag } from 'lucide-react';
 import DepotStockInPage from './DepotStockInPage';
+import TransactionDetailsPage from '../TransactionDetailsPage';
 import { useAppContext } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -16,6 +17,8 @@ export default function DepotPurchaseKhataPage({ onBack }: Props) {
   const [purchases, setPurchases] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedPurchaseId, setSelectedPurchaseId] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     if (activeTab !== 'history') return;
@@ -24,8 +27,8 @@ export default function DepotPurchaseKhataPage({ onBack }: Props) {
       setIsLoading(true);
       if (isDemoMode) {
         setPurchases([
-          { id: '1', invoice_no: 'PUR-001', grand_total: 50000, created_at: new Date().toISOString(), suppliers: { name: 'নিউজা' } },
-          { id: '2', invoice_no: 'PUR-002', grand_total: 12000, created_at: new Date().toISOString(), suppliers: { name: 'ভাই ভাই এগ্রো' } }
+          { id: '1', receipt_no: 'PUR-001', total_amount: 50000, created_at: new Date().toISOString(), suppliers: { name: 'নিউজা' } },
+          { id: '2', receipt_no: 'PUR-002', total_amount: 12000, created_at: new Date().toISOString(), suppliers: { name: 'ভাই ভাই এগ্রো' } }
         ]);
         setIsLoading(false);
         return;
@@ -33,7 +36,7 @@ export default function DepotPurchaseKhataPage({ onBack }: Props) {
       if (!activeBusiness?.id) return;
 
       const { data } = await supabase.from('purchases')
-        .select('id, invoice_no, grand_total, created_at, suppliers(name)')
+        .select('*, suppliers(name)')
         .eq('business_id', activeBusiness.id)
         .is('deleted_at', null)
         .order('created_at', { ascending: false });
@@ -42,12 +45,26 @@ export default function DepotPurchaseKhataPage({ onBack }: Props) {
       setIsLoading(false);
     };
     fetchPurchases();
-  }, [isDemoMode, activeBusiness, activeTab]);
+  }, [isDemoMode, activeBusiness, activeTab, refreshKey]);
 
-  const filteredPurchases = purchases.filter(p => 
-    p.invoice_no?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    p.suppliers?.name?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredPurchases = purchases.filter(p => {
+    const no = p.receipt_no || p.challan_no || p.invoice_no || '';
+    return no.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      p.suppliers?.name?.toLowerCase().includes(searchQuery.toLowerCase());
+  });
+
+  if (selectedPurchaseId) {
+    return (
+      <TransactionDetailsPage
+        type="purchase"
+        transactionId={selectedPurchaseId}
+        onBack={() => {
+          setSelectedPurchaseId(null);
+          setRefreshKey(k => k + 1);
+        }}
+      />
+    );
+  }
 
   return (
     <div className="h-[100dvh] bg-da-depotBg flex flex-col overflow-hidden w-full font-serif">
@@ -82,18 +99,22 @@ export default function DepotPurchaseKhataPage({ onBack }: Props) {
               <div className="text-center text-da-textMuted mt-10 text-sm font-bold">কোনো ক্রয়ের ইতিহাস পাওয়া যায়নি</div>
             ) : (
               <div className="flex flex-col gap-2">
-                {filteredPurchases.map(purchase => (
-                  <div key={purchase.id} className="bg-white p-3 rounded-xl border border-da-cardBorder shadow-sm flex justify-between items-center">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-da-depotBg rounded-lg flex items-center justify-center text-da-depotBlue"><ShoppingBag size={20} /></div>
-                      <div>
-                        <h3 className="font-bold text-sm text-da-textDark">{purchase.invoice_no || 'চালান নেই'}</h3>
-                        <p className="text-[10px] text-da-textMuted mt-0.5">{purchase.suppliers?.name || 'সাধারণ সাপ্লায়ার'} | {new Date(purchase.created_at).toLocaleDateString('en-GB')}</p>
+                {filteredPurchases.map(purchase => {
+                  const invNo = purchase.receipt_no || purchase.challan_no || purchase.invoice_no || purchase.id.slice(0, 8).toUpperCase();
+                  const totalAmt = Number(purchase.total_amount ?? purchase.grand_total ?? 0);
+                  return (
+                    <div key={purchase.id} onClick={() => setSelectedPurchaseId(purchase.id)} className="bg-white p-3 rounded-xl border border-da-cardBorder shadow-sm flex justify-between items-center cursor-pointer active:scale-[0.98] transition-transform">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-da-depotBg rounded-lg flex items-center justify-center text-da-depotBlue"><ShoppingBag size={20} /></div>
+                        <div>
+                          <h3 className="font-bold text-sm text-da-textDark">{invNo}</h3>
+                          <p className="text-[10px] text-da-textMuted mt-0.5">{purchase.suppliers?.name || 'সাধারণ সাপ্লায়ার'} | {new Date(purchase.purchase_date || purchase.created_at).toLocaleDateString('en-GB')}</p>
+                        </div>
                       </div>
+                      <div className="text-right"><p className="font-black text-[14px] text-da-red">৳{toBangla(totalAmt)}</p></div>
                     </div>
-                    <div className="text-right"><p className="font-black text-[14px] text-da-red">৳{toBangla(purchase.grand_total)}</p></div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

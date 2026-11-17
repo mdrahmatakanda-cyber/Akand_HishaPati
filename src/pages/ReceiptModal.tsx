@@ -638,6 +638,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, onClose, onF
   const scrollRef = useRef<HTMLDivElement>(null);
   const paperRef = useRef<HTMLDivElement>(null);
   const [scale, setScale] = useState(1);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
   const [cloudSettings, setCloudSettings] = useState<ReceiptSettings>(() => {
     if (activeBusiness?.id) {
       try {
@@ -696,20 +698,74 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, onClose, onF
     requestAnimationFrame(() => window.print());
   };
 
-  const handleDownload = async () => {
-    if (!paperRef.current) return;
+  const captureCrispCanvas = async (): Promise<HTMLCanvasElement | null> => {
+    if (!paperRef.current) return null;
+    try { await document.fonts?.ready; } catch {}
+
+    const clone = paperRef.current.cloneNode(true) as HTMLElement;
+    clone.style.transform = 'none';
+    clone.style.transformOrigin = 'top left';
+    clone.style.margin = '0';
+
+    const host = document.createElement('div');
+    host.style.position = 'fixed';
+    host.style.left = '-10000px';
+    host.style.top = '0';
+    host.style.width = `${paperW}px`;
+    host.style.background = '#ffffff';
+    host.style.zIndex = '-1';
+    host.style.pointerEvents = 'none';
+    host.appendChild(clone);
+    document.body.appendChild(host);
+
     try {
-      const canvas = await html2canvas(paperRef.current, { scale: 2, backgroundColor: '#ffffff' });
-      const imgData = canvas.toDataURL('image/png');
-      
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      
+      return await html2canvas(clone, {
+        scale: 2.2,
+        useCORS: true,
+        allowTaint: false,
+        backgroundColor: '#ffffff',
+        width: paperW,
+        windowWidth: paperW,
+        logging: false,
+      });
+    } finally {
+      document.body.removeChild(host);
+    }
+  };
+
+  const buildPdfFromCanvas = (canvas: HTMLCanvasElement): jsPDF => {
+    const imgData = canvas.toDataURL('image/jpeg', 0.85);
+    const isThermal = activeSettings.format === '80mm' || activeSettings.format === '58mm';
+
+    if (isThermal) {
+      const mmW = activeSettings.format === '58mm' ? 58 : 80;
+      const mmH = (canvas.height * mmW) / canvas.width;
+      const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: [mmW, Math.max(mmH, 60)], compress: true });
+      pdf.addImage(imgData, 'JPEG', 0, 0, mmW, mmH, undefined, 'MEDIUM');
+      return pdf;
+    }
+
+    const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4', compress: true });
+    const pdfWidth = pdf.internal.pageSize.getWidth();
+    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const finalH = Math.min(pdfHeight, pageHeight);
+    const finalW = pdfHeight > pageHeight ? (canvas.width * pageHeight) / canvas.height : pdfWidth;
+    const offsetX = (pdfWidth - finalW) / 2;
+    pdf.addImage(imgData, 'JPEG', offsetX, 0, finalW, finalH, undefined, 'MEDIUM');
+    return pdf;
+  };
+
+  const handleDownload = async () => {
+    if (isDownloading) return;
+    setIsDownloading(true);
+    try {
+      const canvas = await captureCrispCanvas();
+      if (!canvas) return;
+      const pdf = buildPdfFromCanvas(canvas);
       const pdfBlob = pdf.output('blob');
       const url = URL.createObjectURL(pdfBlob);
-      
+
       const a = document.createElement('a');
       a.href = url;
       a.download = `Receipt-${data.invoiceNo}.pdf`;
@@ -717,45 +773,63 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, onClose, onF
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      
     } catch (err) {
       console.error(err);
       alert('পিডিএফ ডাউনলোড করতে সমস্যা হয়েছে!');
+    } finally {
+      setIsDownloading(false);
     }
   };
 
   const handleShare = async () => {
-    if (!paperRef.current) return;
+    if (isSharing) return;
+    setIsSharing(true);
     try {
-      const canvas = await html2canvas(paperRef.current, { scale: 2, backgroundColor: '#ffffff' });
-      canvas.toBlob(async (blob) => {
-        if (!blob) return;
-        const file = new File([blob], `Receipt-${data.invoiceNo}.png`, { type: 'image/png' });
-        
-        if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
-          try {
-            await navigator.share({ 
-              files: [file], 
-              title: `Receipt - ${data.invoiceNo}`,
-              text: `${data.shopName} থেকে আপনার ক্রয়ের রিসিপ্ট` 
-            });
-          } catch (shareError) {
-            console.log('শেয়ার ক্যান্সেল করা হয়েছে');
+      const canvas = await captureCrispCanvas();
+      if (!canvas) return;
+      const pdf = buildPdfFromCanvas(canvas);
+      const pdfBlob = pdf.output('blob');
+      const pdfFile = new File([pdfBlob], `Receipt-${data.invoiceNo}.pdf`, { type: 'application/pdf' });
+
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+        try {
+          await navigator.share({
+            files: [pdfFile],
+            title: `Receipt - ${data.invoiceNo}`,
+            text: `${activeSettings.shopName || data.shopName} - রিসিপ্ট #${data.invoiceNo}`,
+          });
+          return;
+        } catch {}
+      }
+
+      // যদি ব্রাউজার PDF শেয়ার সাপোর্ট না করে তবে ক্লিয়ার JPEG ছবি শেয়ার/ডাউনলোড হবে
+      await new Promise<void>((resolve) => {
+        canvas.toBlob(async (blob) => {
+          if (blob) {
+            const imgFile = new File([blob], `Receipt-${data.invoiceNo}.jpg`, { type: 'image/jpeg' });
+            if (navigator.share && navigator.canShare && navigator.canShare({ files: [imgFile] })) {
+              try {
+                await navigator.share({ files: [imgFile], title: `Receipt - ${data.invoiceNo}` });
+              } catch {}
+            } else {
+              const url = URL.createObjectURL(pdfBlob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `Receipt-${data.invoiceNo}.pdf`;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+            }
           }
-        } else {
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `Receipt-${data.invoiceNo}.png`;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        }
-      }, 'image/png', 1.0);
+          resolve();
+        }, 'image/jpeg', 0.9);
+      });
     } catch (err) {
       console.error(err);
       alert('শেয়ার করতে সমস্যা হয়েছে!');
+    } finally {
+      setIsSharing(false);
     }
   };
 
@@ -790,11 +864,11 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ isOpen, onClose, onF
               <button onClick={handlePrint} className="flex-1 bg-stone-100 hover:bg-stone-200 text-stone-700 font-medium py-2 rounded-lg flex items-center justify-center gap-1.5 transition-colors text-sm">
                 <Printer className="w-4 h-4" /> {previewOnly ? 'টেস্ট প্রিন্ট' : 'প্রিন্ট'}
               </button>
-              <button onClick={handleDownload} className="flex-1 bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium py-2 rounded-lg flex items-center justify-center gap-1.5 transition-colors text-sm border border-blue-200">
-                <Download className="w-4 h-4" /> PDF
+              <button onClick={handleDownload} disabled={isDownloading} className="flex-1 bg-blue-50 hover:bg-blue-100 text-blue-700 font-medium py-2 rounded-lg flex items-center justify-center gap-1.5 transition-colors text-sm border border-blue-200 disabled:opacity-60">
+                {isDownloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} PDF
               </button>
-              <button onClick={handleShare} className="flex-1 bg-green-50 hover:bg-green-100 text-green-700 font-medium py-2 rounded-lg flex items-center justify-center gap-1.5 transition-colors text-sm border border-green-200">
-                <Share2 className="w-4 h-4" /> শেয়ার
+              <button onClick={handleShare} disabled={isSharing} className="flex-1 bg-green-50 hover:bg-green-100 text-green-700 font-medium py-2 rounded-lg flex items-center justify-center gap-1.5 transition-colors text-sm border border-green-200 disabled:opacity-60">
+                {isSharing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />} শেয়ার
               </button>
             </div>
             {previewOnly ? (

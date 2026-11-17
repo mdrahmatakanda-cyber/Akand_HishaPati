@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, PlusCircle, Clock, Search, Loader2, ReceiptText } from 'lucide-react';
 import SalePage from '../SalePage';
+import TransactionDetailsPage from '../TransactionDetailsPage';
 import { useAppContext } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
@@ -16,6 +17,8 @@ export default function DepotSalesKhataPage({ onBack, onNavigate }: Props) {
   const [sales, setSales] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
     if (activeTab !== 'history') return;
@@ -24,8 +27,8 @@ export default function DepotSalesKhataPage({ onBack, onNavigate }: Props) {
       setIsLoading(true);
       if (isDemoMode) {
         setSales([
-          { id: '1', invoice_no: 'INV-001', grand_total: 5000, created_at: new Date().toISOString(), customers: { name: 'রহিম এন্টারপ্রাইজ' } },
-          { id: '2', invoice_no: 'INV-002', grand_total: 12000, created_at: new Date().toISOString(), customers: { name: 'করিম স্টোর' } }
+          { id: '1', receipt_no: 'INV-001', total_amount: 5000, created_at: new Date().toISOString(), customers: { name: 'রহিম এন্টারপ্রাইজ' } },
+          { id: '2', receipt_no: 'INV-002', total_amount: 12000, created_at: new Date().toISOString(), customers: { name: 'করিম স্টোর' } }
         ]);
         setIsLoading(false);
         return;
@@ -33,7 +36,7 @@ export default function DepotSalesKhataPage({ onBack, onNavigate }: Props) {
       if (!activeBusiness?.id) return;
 
       const { data } = await supabase.from('sales')
-        .select('id, invoice_no, grand_total, created_at, customers(name)')
+        .select('*, customers(name)')
         .eq('business_id', activeBusiness.id)
         .is('deleted_at', null)
         .order('created_at', { ascending: false });
@@ -42,12 +45,26 @@ export default function DepotSalesKhataPage({ onBack, onNavigate }: Props) {
       setIsLoading(false);
     };
     fetchSales();
-  }, [isDemoMode, activeBusiness, activeTab]);
+  }, [isDemoMode, activeBusiness, activeTab, refreshKey]);
 
-  const filteredSales = sales.filter(s => 
-    s.invoice_no?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    s.customers?.name?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredSales = sales.filter(s => {
+    const no = s.receipt_no || s.challan_no || s.invoice_no || '';
+    return no.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      s.customers?.name?.toLowerCase().includes(searchQuery.toLowerCase());
+  });
+
+  if (selectedSaleId) {
+    return (
+      <TransactionDetailsPage
+        type="sale"
+        transactionId={selectedSaleId}
+        onBack={() => {
+          setSelectedSaleId(null);
+          setRefreshKey(k => k + 1);
+        }}
+      />
+    );
+  }
 
   return (
     <div className="h-[100dvh] bg-da-depotBg flex flex-col overflow-hidden w-full font-serif">
@@ -82,18 +99,22 @@ export default function DepotSalesKhataPage({ onBack, onNavigate }: Props) {
               <div className="text-center text-da-textMuted mt-10 text-sm font-bold">কোনো বিক্রির ইতিহাস পাওয়া যায়নি</div>
             ) : (
               <div className="flex flex-col gap-2">
-                {filteredSales.map(sale => (
-                  <div key={sale.id} className="bg-white p-3 rounded-xl border border-da-cardBorder shadow-sm flex justify-between items-center">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-da-depotBg rounded-lg flex items-center justify-center text-da-depotBlue"><ReceiptText size={20} /></div>
-                      <div>
-                        <h3 className="font-bold text-sm text-da-textDark">{sale.invoice_no || 'রিসিপ্ট নেই'}</h3>
-                        <p className="text-[10px] text-da-textMuted mt-0.5">{sale.customers?.name || 'সাধারণ কাস্টমার'} | {new Date(sale.created_at).toLocaleDateString('en-GB')}</p>
+                {filteredSales.map(sale => {
+                  const invNo = sale.receipt_no || sale.challan_no || sale.invoice_no || sale.id.slice(0, 8).toUpperCase();
+                  const totalAmt = Number(sale.total_amount ?? sale.grand_total ?? 0);
+                  return (
+                    <div key={sale.id} onClick={() => setSelectedSaleId(sale.id)} className="bg-white p-3 rounded-xl border border-da-cardBorder shadow-sm flex justify-between items-center cursor-pointer active:scale-[0.98] transition-transform">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-da-depotBg rounded-lg flex items-center justify-center text-da-depotBlue"><ReceiptText size={20} /></div>
+                        <div>
+                          <h3 className="font-bold text-sm text-da-textDark">{invNo}</h3>
+                          <p className="text-[10px] text-da-textMuted mt-0.5">{sale.customers?.name || 'সাধারণ কাস্টমার'} | {new Date(sale.sale_date || sale.created_at).toLocaleDateString('en-GB')}</p>
+                        </div>
                       </div>
+                      <div className="text-right"><p className="font-black text-[14px] text-da-greenDeep">৳{toBangla(totalAmt)}</p></div>
                     </div>
-                    <div className="text-right"><p className="font-black text-[14px] text-da-greenDeep">৳{toBangla(sale.grand_total)}</p></div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

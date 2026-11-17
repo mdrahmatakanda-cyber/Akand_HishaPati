@@ -3,12 +3,14 @@ import {
   ArrowLeft, Printer, TrendingUp, ShoppingBag, Banknote, Truck,
   Target, CalendarDays, X, ChevronRight, Check, Loader2, Wallet
 } from 'lucide-react';
-import { toBangla } from '../../lib/utils';
+import { toBangla, numberToWordsBn } from '../../lib/utils';
 import { useAppContext } from '../../context/AppContext';
 import { useAuth } from '../../context/AuthContext';
 import { supabase } from '../../lib/supabase';
 import { demoDepotReportData, demoCompaniesList, demoCategories, demoDepotReportDetails } from '../../lib/demoData';
 import { showAppToast } from '../../components/PremiumToast';
+import TransactionDetailsPage from '../TransactionDetailsPage';
+import { ReceiptModal, type ReceiptData } from '../ReceiptModal';
 
 interface Props {
   onBack: () => void;
@@ -36,9 +38,65 @@ export default function DepotReportsPage({ onBack }: Props) {
 
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [detailType, setDetailType] = useState<{ key: string; title: string } | null>(null);
+  // বিস্তারিত লিস্ট স্টেট
   const [detailListData, setDetailListData] = useState<any[]>([]);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
+  
+  // মূল পেজের সাম্প্রতিক লেনদেন স্টেট
   const [recentTransactions, setRecentTransactions] = useState<any[]>([]);
+
+  // ✅ যেকোনো লেনদেনের পূর্ণাঙ্গ বিস্তারিত দেখার স্টেট
+  const [selectedTx, setSelectedTx] = useState<{ id: string; type: 'sale' | 'purchase' } | null>(null);
+  const [selectedExpenseReceipt, setSelectedExpenseReceipt] = useState<ReceiptData | null>(null);
+
+  const openExpenseReceipt = (item: any) => {
+    const d = item.date || item.created_at || new Date().toISOString();
+    const formattedDate = typeof d === 'string' && d.includes('/') ? d : new Date(d).toLocaleDateString('en-GB');
+    const amt = Number(item.amount || item.total_amount || 0);
+
+    const rData: ReceiptData = {
+      type: 'expense',
+      invoiceNo: `EXP-${String(item.id || '001').slice(-5).toUpperCase()}`,
+      date: formattedDate,
+      status: 'পরিশোধিত',
+      shopName: activeBusiness?.name || 'DREAM AGRO',
+      shopAddress: (activeBusiness as any)?.address || '',
+      shopPhone: (activeBusiness as any)?.phone || '',
+      shopEmail: (activeBusiness as any)?.email || '',
+      customerName: item.for_whom || item.title || 'ডিপো খরচ',
+      proprietor: 'N/A',
+      customerPhone: 'N/A',
+      customerAddress: 'N/A',
+      marketName: 'N/A',
+      officerName: item.employee_name || 'ম্যানেজার',
+      officerPhone: 'N/A',
+      officerEmail: 'N/A',
+      receiptTime: formattedDate,
+      vehicleNo: 'N/A',
+      driverName: 'N/A',
+      driverPhone: 'N/A',
+      transportRent: 0,
+      items: [{
+        id: '1',
+        name: item.expense_type || item.title || 'ডিপো খরচ',
+        category: 'খরচ',
+        quantity: 1,
+        unit: 'টি',
+        unitPrice: amt,
+        totalPrice: amt
+      }],
+      totalBags: 0,
+      totalPieces: 1,
+      subtotal: amt,
+      discount: 0,
+      grandTotal: amt,
+      paidAmount: amt,
+      dueAmount: 0,
+      paidInWords: numberToWordsBn(amt),
+      note: item.note || ''
+    };
+    setSelectedExpenseReceipt(rData);
+  };
 
   const allBizIds = businesses.length > 0 ? businesses.map(b => b.id) : (activeBusiness?.id ? [activeBusiness.id] : []);
 
@@ -211,6 +269,17 @@ export default function DepotReportsPage({ onBack }: Props) {
 
   const formatTaka = (amount: number) => toBangla(Math.round(amount || 0).toLocaleString('en-IN'));
 
+  // ✅ লেনদেনে ট্যাপ করলে পুরো বিস্তারিত পেজ চালু হবে
+  if (selectedTx) {
+    return (
+      <TransactionDetailsPage
+        type={selectedTx.type}
+        transactionId={selectedTx.id}
+        onBack={() => setSelectedTx(null)}
+      />
+    );
+  }
+
   return (
     <div className="h-[100dvh] bg-da-depotBg text-da-textDark font-serif flex flex-col overflow-hidden w-full">
       <header className="bg-da-depotNavy text-white shadow-md shrink-0 z-40 print:hidden">
@@ -271,7 +340,15 @@ export default function DepotReportsPage({ onBack }: Props) {
               <div className="text-center py-4 text-da-textMuted text-xs font-bold">কোনো লেনদেন পাওয়া যায়নি</div>
             ) : (
               recentTransactions.map((tx, idx) => (
-                <div key={idx} className="flex justify-between items-center bg-da-depotBg p-2 rounded-lg border border-da-cardBorder">
+                <div
+                  key={idx}
+                  onClick={() => {
+                    if (tx.type === 'sale') setSelectedTx({ id: String(tx.id || idx), type: 'sale' });
+                    else if (tx.type === 'purchase') setSelectedTx({ id: String(tx.id || idx), type: 'purchase' });
+                    else openExpenseReceipt(tx);
+                  }}
+                  className="flex justify-between items-center bg-da-depotBg hover:bg-blue-50/40 p-2 rounded-xl border border-da-cardBorder cursor-pointer active:scale-[0.98] transition-all"
+                >
                   <div className="flex items-center gap-2 min-w-0">
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${tx.type === 'sale' ? 'bg-green-100 text-green-600' : tx.type === 'purchase' ? 'bg-blue-100 text-blue-600' : 'bg-red-100 text-red-600'}`}>
                       {tx.type === 'sale' ? <TrendingUp size={14} /> : tx.type === 'purchase' ? <ShoppingBag size={14} /> : <Banknote size={14} />}
@@ -281,9 +358,12 @@ export default function DepotReportsPage({ onBack }: Props) {
                       <p className="text-[9px] text-da-textMuted mt-0.5">{tx.date ? new Date(tx.date).toLocaleDateString('en-GB') : ''}</p>
                     </div>
                   </div>
-                  <span className={`font-black text-[12px] shrink-0 pl-2 ${tx.type === 'sale' ? 'text-green-600' : tx.type === 'purchase' ? 'text-blue-600' : 'text-red-600'}`}>
-                    {tx.type === 'sale' ? '+' : '-'} ৳ {toBangla(tx.amount)}
-                  </span>
+                  <div className="flex items-center gap-1.5 shrink-0 pl-2">
+                    <span className={`font-black text-[12px] ${tx.type === 'sale' ? 'text-green-600' : tx.type === 'purchase' ? 'text-blue-600' : 'text-red-600'}`}>
+                      {tx.type === 'sale' ? '+' : '-'} ৳ {toBangla(tx.amount)}
+                    </span>
+                    <ChevronRight size={14} className="text-gray-400" />
+                  </div>
                 </div>
               ))
             )}
@@ -361,14 +441,37 @@ export default function DepotReportsPage({ onBack }: Props) {
                 <div className="text-center text-xs text-da-textMuted mt-10">কোনো বিস্তারিত তথ্য পাওয়া যায়নি।</div>
               ) : detailType.key === 'profit' ? (
                 detailListData.map((row: any) => (
-                  <div key={row.id} className="bg-white p-3 rounded-xl border border-da-cardBorder flex justify-between items-center font-bold text-sm">
-                    <span>{row.label}</span>
-                    <span className="text-da-depotBlue">৳ {formatTaka(row.value)}</span>
+                  <div
+                    key={row.id}
+                    onClick={() => {
+                      if (row.id === 'pr1') setDetailType({ key: 'sales', title: 'মোট বিক্রির বিস্তারিত' });
+                      else if (row.id === 'pr2') setDetailType({ key: 'purchases', title: 'মোট ক্রয়ের বিস্তারিত' });
+                      else if (row.id === 'pr3') setDetailType({ key: 'expenses', title: 'মোট খরচের বিস্তারিত' });
+                      else if (row.id === 'pr4') setDetailType({ key: 'transport', title: 'গাড়ি ভাড়ার হিসাব' });
+                    }}
+                    className={`bg-white p-3 rounded-xl border border-da-cardBorder flex justify-between items-center font-bold text-sm ${row.id !== 'pr5' ? 'cursor-pointer hover:bg-blue-50/40 active:scale-[0.98]' : 'bg-emerald-50/40 border-emerald-200'} transition-all`}
+                  >
+                    <span className="flex items-center gap-1.5">{row.label} {row.id !== 'pr5' && <ChevronRight size={14} className="text-gray-400" />}</span>
+                    <span className={row.id === 'pr5' ? 'text-emerald-700 font-black' : 'text-da-depotBlue'}>৳ {formatTaka(row.value)}</span>
                   </div>
                 ))
               ) : (
                 detailListData.map((item, idx) => (
-                  <div key={item.id || idx} className="bg-white p-3 rounded-xl border border-da-cardBorder shadow-sm flex justify-between items-center">
+                  <div
+                    key={item.id || idx}
+                    onClick={() => {
+                      if (detailType.key === 'sales') {
+                        setIsDetailModalOpen(false);
+                        setSelectedTx({ id: String(item.id || idx), type: 'sale' });
+                      } else if (detailType.key === 'purchases') {
+                        setIsDetailModalOpen(false);
+                        setSelectedTx({ id: String(item.id || idx), type: 'purchase' });
+                      } else if (detailType.key === 'expenses') {
+                        openExpenseReceipt(item);
+                      }
+                    }}
+                    className={`bg-white p-3 rounded-xl border border-da-cardBorder shadow-sm flex justify-between items-center ${detailType.key !== 'investment' ? 'cursor-pointer hover:bg-blue-50/40 active:scale-[0.98]' : ''} transition-all`}
+                  >
                     <div className="min-w-0 pr-2">
                       <p className="font-bold text-sm text-da-textDark truncate">{item.title || item.receipt_no || item.challan_no || item.expense_type || item.name || 'লেনদেন'}</p>
                       <p className="text-[10px] text-da-textMuted mt-0.5 truncate">
@@ -378,7 +481,10 @@ export default function DepotReportsPage({ onBack }: Props) {
                         {item.note ? ` | ${item.note}` : ''}
                       </p>
                     </div>
-                    <p className="font-black text-sm text-da-depotBlue shrink-0">৳ {toBangla(item.total_amount ?? item.amount ?? item.initial_capital ?? 0)}</p>
+                    <div className="flex items-center gap-1.5 shrink-0 pl-2">
+                      <p className="font-black text-sm text-da-depotBlue">৳ {toBangla(item.total_amount ?? item.amount ?? item.initial_capital ?? 0)}</p>
+                      {detailType.key !== 'investment' && <ChevronRight size={14} className="text-gray-400" />}
+                    </div>
                   </div>
                 ))
               )}
@@ -386,6 +492,17 @@ export default function DepotReportsPage({ onBack }: Props) {
           </div>
         </div>
       )}
+
+      {/* খরচের রিসিট দেখার মডাল */}
+      <ReceiptModal
+        isOpen={Boolean(selectedExpenseReceipt)}
+        onClose={() => setSelectedExpenseReceipt(null)}
+        onCancel={() => setSelectedExpenseReceipt(null)}
+        onFinalize={() => setSelectedExpenseReceipt(null)}
+        isSaving={false}
+        previewOnly={true}
+        data={selectedExpenseReceipt}
+      />
     </div>
   );
 }

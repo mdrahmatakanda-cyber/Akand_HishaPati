@@ -1,14 +1,16 @@
 import { useState, useEffect, useMemo } from 'react';
 import {
   ArrowLeft, Filter, X, Plus, Minus, CalendarDays, Search,
-  Loader2, WalletCards, ArrowDownLeft, ArrowUpRight, Trash2
+  Loader2, WalletCards, ArrowDownLeft, ArrowUpRight, Trash2, ChevronRight, FileText
 } from 'lucide-react';
-import { toBangla } from '../lib/utils';
+import { toBangla, numberToWordsBn } from '../lib/utils';
 import { useAppContext } from '../context/AppContext';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { demoShopCashbox, demoDepotCashbox } from '../lib/demoData';
 import { showAppToast } from '../components/PremiumToast';
+import TransactionDetailsPage from './TransactionDetailsPage';
+import { ReceiptModal, type ReceiptData } from './ReceiptModal';
 
 interface Props {
   onBack: () => void;
@@ -17,6 +19,7 @@ interface Props {
 
 interface CashTx {
   id: string;
+  rawId?: string;
   source: 'manual' | 'sale' | 'purchase' | 'expense' | 'dealer' | 'company';
   type: string;
   title: string;
@@ -34,6 +37,11 @@ export default function CashboxPage({ onBack, isDepot = false }: Props) {
   const [transactions, setTransactions] = useState<CashTx[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+
+  // ✅ বিস্তারিত দেখার স্টেট
+  const [selectedTx, setSelectedTx] = useState<{ id: string; type: 'sale' | 'purchase' } | null>(null);
+  const [selectedExpenseReceipt, setSelectedExpenseReceipt] = useState<ReceiptData | null>(null);
+  const [selectedManualTx, setSelectedManualTx] = useState<CashTx | null>(null);
 
   const [activeFilter, setActiveFilter] = useState<'day' | 'week' | 'month' | 'year' | 'all' | 'custom'>('month');
   const [isCustomDateOpen, setIsCustomDateOpen] = useState(false);
@@ -78,6 +86,7 @@ export default function CashboxPage({ onBack, isDepot = false }: Props) {
         const d = new Date(m.tx_date || m.created_at);
         list.push({
           id: m.id,
+          rawId: m.id,
           source: 'manual',
           type: m.tx_type === 'transport_in' ? 'কোম্পানি গাড়ি ভাড়া' : m.is_income ? 'ক্যাশ ইন' : 'ক্যাশ আউট',
           title: m.title || (m.is_income ? 'নগদ জমা' : 'নগদ খরচ'),
@@ -93,6 +102,7 @@ export default function CashboxPage({ onBack, isDepot = false }: Props) {
         const d = new Date(s.sale_date);
         list.push({
           id: `sale_${s.id}`,
+          rawId: s.id,
           source: 'sale',
           type: 'নগদ বিক্রি',
           title: `বিক্রি #${s.receipt_no || s.id.slice(0, 6).toUpperCase()}`,
@@ -108,6 +118,7 @@ export default function CashboxPage({ onBack, isDepot = false }: Props) {
         const d = new Date(p.purchase_date);
         list.push({
           id: `pur_${p.id}`,
+          rawId: p.id,
           source: 'purchase',
           type: 'নগদ ক্রয়',
           title: `ক্রয় ${p.challan_no ? `#${p.challan_no}` : ''}`.trim(),
@@ -123,6 +134,7 @@ export default function CashboxPage({ onBack, isDepot = false }: Props) {
         const d = new Date(e.date);
         list.push({
           id: `exp_${e.id}`,
+          rawId: e.id,
           source: 'expense',
           type: e.expense_type === 'পরিবহন খরচ' ? 'গাড়ি ভাড়া' : 'খরচ',
           title: e.expense_type || 'খরচ',
@@ -271,10 +283,78 @@ export default function CashboxPage({ onBack, isDepot = false }: Props) {
       }
       setTransactions(prev => prev.filter(t => t.id !== id));
       showAppToast('এন্ট্রি ডিলিট করা হয়েছে!', 'success');
+      setSelectedManualTx(null);
     } catch (err: any) {
       showAppToast('ডিলিট করা যায়নি: ' + err.message, 'error');
     }
   };
+
+  const handleTxClick = (tx: CashTx) => {
+    if (tx.source === 'sale') {
+      setSelectedTx({ id: tx.rawId || tx.id.replace('sale_', ''), type: 'sale' });
+    } else if (tx.source === 'purchase') {
+      setSelectedTx({ id: tx.rawId || tx.id.replace('pur_', ''), type: 'purchase' });
+    } else if (tx.source === 'expense') {
+      const rData: ReceiptData = {
+        type: 'expense',
+        invoiceNo: `EXP-${String(tx.rawId || tx.id).slice(-5).toUpperCase()}`,
+        date: tx.date,
+        status: 'পরিশোধিত',
+        shopName: activeBusiness?.name || (isDepot ? 'ডিপো' : 'দোকান'),
+        shopAddress: (activeBusiness as any)?.address || '',
+        shopPhone: (activeBusiness as any)?.phone || '',
+        shopEmail: (activeBusiness as any)?.email || '',
+        customerName: tx.title || 'খরচ',
+        proprietor: 'N/A',
+        customerPhone: 'N/A',
+        customerAddress: 'N/A',
+        marketName: 'N/A',
+        officerName: 'ম্যানেজার / ক্যাশিয়ার',
+        officerPhone: 'N/A',
+        officerEmail: 'N/A',
+        receiptTime: tx.date,
+        vehicleNo: 'N/A',
+        driverName: 'N/A',
+        driverPhone: 'N/A',
+        transportRent: 0,
+        items: [{
+          id: '1',
+          name: tx.title || 'ক্যাশ খরচ',
+          category: 'ক্যাশবক্স খরচ',
+          quantity: 1,
+          unit: 'টি',
+          unitPrice: tx.amount,
+          totalPrice: tx.amount
+        }],
+        totalBags: 0,
+        totalPieces: 1,
+        subtotal: tx.amount,
+        discount: 0,
+        grandTotal: tx.amount,
+        paidAmount: tx.amount,
+        dueAmount: 0,
+        paidInWords: numberToWordsBn(tx.amount),
+        note: tx.note || ''
+      };
+      setSelectedExpenseReceipt(rData);
+    } else {
+      setSelectedManualTx(tx);
+    }
+  };
+
+  // ✅ বিক্রি বা ক্রয়ে ক্লিক করলে পূর্ণাঙ্গ বিস্তারিত পেজ চালু হবে
+  if (selectedTx) {
+    return (
+      <TransactionDetailsPage
+        type={selectedTx.type}
+        transactionId={selectedTx.id}
+        onBack={() => {
+          setSelectedTx(null);
+          fetchCashboxData();
+        }}
+      />
+    );
+  }
 
   return (
     <div className={`h-[100dvh] ${isDepot ? 'bg-da-depotBg' : 'bg-[#EFF6F3]'} text-[#0F2A3D] font-serif flex flex-col overflow-hidden w-full relative`}>
@@ -353,7 +433,11 @@ export default function CashboxPage({ onBack, isDepot = false }: Props) {
         ) : (
           <div className="flex flex-col gap-2">
             {filteredList.map(tx => (
-              <div key={tx.id} className="bg-white p-3 rounded-xl border border-gray-200/80 shadow-sm flex justify-between items-center gap-2">
+              <div
+                key={tx.id}
+                onClick={() => handleTxClick(tx)}
+                className="bg-white hover:bg-blue-50/40 p-3 rounded-xl border border-gray-200/80 shadow-sm flex justify-between items-center gap-2 cursor-pointer active:scale-[0.98] transition-all"
+              >
                 <div className="flex items-center gap-2.5 min-w-0">
                   <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${tx.isIncome ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
                     {tx.isIncome ? <ArrowDownLeft size={18} /> : <ArrowUpRight size={18} />}
@@ -367,14 +451,20 @@ export default function CashboxPage({ onBack, isDepot = false }: Props) {
                     <p className="text-[10px] text-gray-400 truncate">{tx.date}{tx.note ? ` • ${tx.note}` : ''}</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-1.5 shrink-0">
                   <span className={`font-black text-sm ${tx.isIncome ? 'text-emerald-600' : 'text-red-600'}`}>
                     {tx.isIncome ? '+' : '-'}{toBangla(tx.amount)} ৳
                   </span>
-                  {tx.source === 'manual' && (
-                    <button onClick={() => handleDeleteManual(tx.id)} className="p-1 text-gray-400 hover:text-red-600 transition" title="ডিলিট">
+                  {tx.source === 'manual' ? (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleDeleteManual(tx.id); }}
+                      className="p-1 text-gray-400 hover:text-red-600 transition"
+                      title="ডিলিট"
+                    >
                       <Trash2 size={14} />
                     </button>
+                  ) : (
+                    <ChevronRight size={14} className="text-gray-400" />
                   )}
                 </div>
               </div>
@@ -467,6 +557,79 @@ export default function CashboxPage({ onBack, isDepot = false }: Props) {
           </div>
         </div>
       )}
+
+      {/* ✅ ম্যানুয়াল ও অন্যান্য ক্যাশ লেনদেনের পূর্ণাঙ্গ বিবরণ পপআপ */}
+      {selectedManualTx && (
+        <div className="fixed inset-0 bg-black/60 z-[120] flex items-center justify-center p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in zoom-in-95 duration-200">
+            <div className={`${selectedManualTx.isIncome ? 'bg-emerald-600' : 'bg-red-500'} p-3.5 text-white flex justify-between items-center`}>
+              <span className="font-bold text-sm flex items-center gap-1.5"><FileText size={16} /> ক্যাশ লেনদেনের বিস্তারিত</span>
+              <button onClick={() => setSelectedManualTx(null)} className="p-1 bg-white/20 rounded-full"><X size={16} /></button>
+            </div>
+            <div className="p-4 flex flex-col gap-3">
+              <div className="text-center p-3 rounded-2xl bg-gray-50 border border-gray-100">
+                <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full mb-1 ${selectedManualTx.isIncome ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                  {selectedManualTx.type}
+                </span>
+                <p className={`text-2xl font-black ${selectedManualTx.isIncome ? 'text-emerald-600' : 'text-red-600'}`}>
+                  {selectedManualTx.isIncome ? '+' : '-'}{toBangla(selectedManualTx.amount)} ৳
+                </p>
+                <p className="text-[11px] font-bold text-gray-500 mt-1">
+                  কথায়: {numberToWordsBn(selectedManualTx.amount)}
+                </p>
+              </div>
+
+              <div className="bg-white rounded-xl border border-gray-200 p-3 space-y-2 text-xs">
+                <div className="flex justify-between border-b pb-1.5">
+                  <span className="text-gray-500 font-bold">বিবরণ / খাত:</span>
+                  <span className="font-bold text-gray-800 text-right">{selectedManualTx.title}</span>
+                </div>
+                <div className="flex justify-between border-b pb-1.5">
+                  <span className="text-gray-500 font-bold">তারিখ:</span>
+                  <span className="font-bold text-gray-800">{selectedManualTx.date}</span>
+                </div>
+                <div className="flex justify-between border-b pb-1.5">
+                  <span className="text-gray-500 font-bold">উৎস:</span>
+                  <span className="font-bold text-gray-800">{selectedManualTx.source === 'manual' ? 'সরাসরি এন্ট্রি' : 'সিস্টেম অটো'}</span>
+                </div>
+                {selectedManualTx.note && (
+                  <div className="pt-1">
+                    <span className="text-gray-500 font-bold block mb-0.5">নোট:</span>
+                    <p className="bg-gray-50 p-2 rounded-lg text-gray-700 font-medium">{selectedManualTx.note}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="p-3 border-t bg-gray-50 flex gap-2">
+              {selectedManualTx.source === 'manual' && (
+                <button
+                  onClick={() => handleDeleteManual(selectedManualTx.id)}
+                  className="bg-red-50 text-red-600 border border-red-200 px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1 active:scale-95 transition"
+                >
+                  <Trash2 size={14} /> ডিলিট
+                </button>
+              )}
+              <button
+                onClick={() => setSelectedManualTx(null)}
+                className="flex-1 bg-gray-800 text-white py-2 rounded-xl text-xs font-bold active:scale-95 transition"
+              >
+                বন্ধ করুন
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* খরচের রিসিপ্ট দেখার মডাল */}
+      <ReceiptModal
+        isOpen={Boolean(selectedExpenseReceipt)}
+        onClose={() => setSelectedExpenseReceipt(null)}
+        onCancel={() => setSelectedExpenseReceipt(null)}
+        onFinalize={() => setSelectedExpenseReceipt(null)}
+        isSaving={false}
+        previewOnly={true}
+        data={selectedExpenseReceipt}
+      />
     </div>
   );
 }

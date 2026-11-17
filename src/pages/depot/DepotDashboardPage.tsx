@@ -13,7 +13,7 @@ import { supabase } from '../../lib/supabase';
 import { demoDepotStats } from '../../lib/demoData';
 
 interface Props {
-  onNavigate: (screen: string) => void;
+  onNavigate: (screen: string, id?: string) => void;
   onToggleMode: () => void;
 }
 
@@ -35,6 +35,7 @@ export default function DepotDashboardPage({ onNavigate, onToggleMode }: Props) 
     stockValue: 0, marketDue: 0, companyPayable: 0, 
     periodSale: 0, periodExpense: 0 
   });
+  const [recentActivities, setRecentActivities] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchDepotStats = async () => {
@@ -48,6 +49,11 @@ export default function DepotDashboardPage({ onNavigate, onToggleMode }: Props) 
             periodSale: selectedPeriod === 'TODAY' ? demoDepotStats.todaySale : selectedPeriod === 'WEEK' ? demoDepotStats.todaySale * 5 : demoDepotStats.todaySale * 20,
             periodExpense: selectedPeriod === 'TODAY' ? demoDepotStats.todayExpense : selectedPeriod === 'WEEK' ? demoDepotStats.todayExpense * 4 : demoDepotStats.todayExpense * 15
           });
+          setRecentActivities([
+            { id: '1', type: 'sale', title: 'বিক্রি #DA-2026-0001', date: new Date().toISOString(), amount: 35000 },
+            { id: '2', type: 'purchase', title: 'ক্রয় #CH-501', date: new Date(Date.now() - 86400000).toISOString(), amount: 18000 },
+            { id: '3', type: 'expense', title: 'গোডাউন ভাড়া', date: new Date(Date.now() - 172800000).toISOString(), amount: 15000 },
+          ]);
         } else {
           if (!activeBusiness?.id) return;
           const bizId = activeBusiness.id;
@@ -60,12 +66,15 @@ export default function DepotDashboardPage({ onNavigate, onToggleMode }: Props) 
           }
 
           const allBizIds = businesses.length > 0 ? businesses.map(b => b.id) : [bizId];
-          const [prodRes, dealRes, supRes, saleRes, expRes] = await Promise.all([
+          const [prodRes, dealRes, supRes, saleRes, expRes, recSaleRes, recPurRes, recExpRes] = await Promise.all([
             supabase.from('products').select('depot_stock_quantity, purchase_price').in('business_id', allBizIds),
             supabase.from('dealers').select('due_balance').eq('business_id', bizId),
             supabase.from('suppliers').select('due_balance').eq('business_id', bizId),
             supabase.from('sales').select('total_amount').eq('business_id', bizId).eq('is_depot', true).is('deleted_at', null).gte('sale_date', startDate),
-            supabase.from('expenses').select('amount').eq('business_id', bizId).eq('is_depot', true).is('deleted_at', null).gte('date', startDate)
+            supabase.from('expenses').select('amount').eq('business_id', bizId).eq('is_depot', true).is('deleted_at', null).gte('date', startDate),
+            supabase.from('sales').select('id, receipt_no, total_amount, sale_date').eq('business_id', bizId).eq('is_depot', true).is('deleted_at', null).order('sale_date', { ascending: false }).limit(3),
+            supabase.from('purchases').select('id, challan_no, total_amount, purchase_date').eq('business_id', bizId).eq('is_depot', true).is('deleted_at', null).order('purchase_date', { ascending: false }).limit(3),
+            supabase.from('expenses').select('id, expense_type, amount, date').eq('business_id', bizId).eq('is_depot', true).is('deleted_at', null).order('date', { ascending: false }).limit(3)
           ]);
 
           const stockVal = prodRes.data?.reduce((acc, curr) => acc + (Number(curr.depot_stock_quantity || 0) * Number(curr.purchase_price || 0)), 0) || 0;
@@ -81,6 +90,14 @@ export default function DepotDashboardPage({ onNavigate, onToggleMode }: Props) 
             periodSale,
             periodExpense
           });
+
+          const combined = [
+            ...(recSaleRes.data || []).map((s: any) => ({ id: s.id, type: 'sale', title: `বিক্রি #${s.receipt_no || s.id.slice(0, 6)}`, date: s.sale_date, amount: Number(s.total_amount || 0) })),
+            ...(recPurRes.data || []).map((p: any) => ({ id: p.id, type: 'purchase', title: `ক্রয় ${p.challan_no ? `#${p.challan_no}` : ''}`.trim(), date: p.purchase_date, amount: Number(p.total_amount || 0) })),
+            ...(recExpRes.data || []).map((e: any) => ({ id: e.id, type: 'expense', title: e.expense_type || 'খরচ', date: e.date, amount: Number(e.amount || 0) }))
+          ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 5);
+
+          setRecentActivities(combined);
         }
       } catch (error) {
         console.error("Depot stats fetch error:", error);
@@ -229,20 +246,61 @@ export default function DepotDashboardPage({ onNavigate, onToggleMode }: Props) 
 
         {/* সাম্প্রতিক অ্যাক্টিভিটি */}
         <div className="bg-white rounded-xl border border-da-cardBorder shadow-sm p-3 shrink-0 mt-1">
-           <div className="flex items-center gap-2 mb-2 border-b border-da-cardBorder pb-2">
-             <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-da-depotNavy to-da-depotBlue flex items-center justify-center">
-               <History size={15} className="text-white" />
-             </span>
-             <h3 className="font-bold text-[12px] text-da-depotNavy">সাম্প্রতিক অ্যাক্টিভিটি</h3>
-           </div>
-           <div className="flex flex-col items-center py-4">
-             <div className="w-12 h-12 rounded-full bg-[#EAF0F8] flex items-center justify-center mb-2">
-               <ReceiptText size={22} className="text-da-depotBlue/60" />
-             </div>
-             <div className="text-center text-[11px] text-da-textMuted font-bold">
-               ডিপোতে কোনো সাম্প্রতিক লেনদেন পাওয়া যায়নি।
-             </div>
-           </div>
+          <div className="flex items-center justify-between mb-2 border-b border-da-cardBorder pb-2">
+            <div className="flex items-center gap-2">
+              <span className="w-7 h-7 rounded-lg bg-gradient-to-br from-da-depotNavy to-da-depotBlue flex items-center justify-center">
+                <History size={15} className="text-white" />
+              </span>
+              <h3 className="font-bold text-[12px] text-da-depotNavy">সাম্প্রতিক অ্যাক্টিভিটি</h3>
+            </div>
+            {recentActivities.length > 0 && (
+              <button onClick={() => onNavigate('reports')} className="text-[10px] font-bold text-da-depotBlue hover:underline">
+                সব দেখুন
+              </button>
+            )}
+          </div>
+
+          {isLoading ? (
+            <div className="flex justify-center py-5">
+              <Loader2 size={24} className="animate-spin text-da-depotBlue" />
+            </div>
+          ) : recentActivities.length === 0 ? (
+            <div className="flex flex-col items-center py-4">
+              <div className="w-12 h-12 rounded-full bg-[#EAF0F8] flex items-center justify-center mb-2">
+                <ReceiptText size={22} className="text-da-depotBlue/60" />
+              </div>
+              <div className="text-center text-[11px] text-da-textMuted font-bold">
+                ডিপোতে কোনো সাম্প্রতিক লেনদেন পাওয়া যায়নি।
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {recentActivities.map((act) => (
+                <div
+                  key={act.id}
+                  onClick={() => {
+                    if (act.type === 'sale') onNavigate('sale_details', act.id);
+                    else if (act.type === 'purchase') onNavigate('purchase_details', act.id);
+                    else onNavigate('expense_khata');
+                  }}
+                  className="flex justify-between items-center bg-da-depotBg hover:bg-blue-50/50 p-2 rounded-xl border border-da-cardBorder cursor-pointer active:scale-[0.98] transition-all"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${act.type === 'sale' ? 'bg-emerald-100 text-emerald-700' : act.type === 'purchase' ? 'bg-blue-100 text-blue-700' : 'bg-red-100 text-red-700'}`}>
+                      {act.type === 'sale' ? <ReceiptText size={16} /> : act.type === 'purchase' ? <ShoppingBag size={16} /> : <Banknote size={16} />}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-bold text-[11px] text-da-textDark truncate">{act.title}</p>
+                      <p className="text-[9px] text-da-textMuted mt-0.5">{act.date ? new Date(act.date).toLocaleDateString('en-GB') : ''}</p>
+                    </div>
+                  </div>
+                  <span className={`font-black text-[12px] shrink-0 pl-2 ${act.type === 'sale' ? 'text-emerald-700' : act.type === 'purchase' ? 'text-blue-700' : 'text-red-700'}`}>
+                    {act.type === 'sale' ? '+' : '-'} ৳{toBangla(act.amount)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </main>
 
